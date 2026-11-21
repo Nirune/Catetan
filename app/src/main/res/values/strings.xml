@@ -15,4 +15,5 @@
     <string name="export_path_desc">Pilih folder tujuan file hasil ekspor</string>
     <string name="export_path_pick">Pilih folder</string>
     <string name="export_path_current">Saat ini: %s</string>
+    <string name="export_path_default">Documents</string>
 </resources>

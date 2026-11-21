@@ -304,6 +304,49 @@ fun NoteListScreen(
                             modifier = Modifier.padding(24.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            // Path export section
+                            Text(
+                                text = stringResource(R.string.export_path_title),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .clickable(onClick = {
+                                        showThemeDialog = false
+                                        onPickFolder()
+                                    })
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.export_path_pick),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = stringResource(
+                                        R.string.export_path_current,
+                                        currentExportPath ?: stringResource(R.string.export_path_default)
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Divider(
+                                modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
+                            )
+
+                            // Tema section
                             Text(
                                 text = stringResource(R.string.theme),
                                 style = MaterialTheme.typography.labelMedium.copy(
@@ -354,42 +397,6 @@ fun NoteListScreen(
                                     }
                                 }
                             }
-                        }
-
-                        // Path export section
-                        Text(
-                            text = stringResource(R.string.export_path_title),
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .padding(top = 20.dp, bottom = 4.dp)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = {
-                                    showThemeDialog = false
-                                    onPickFolder()
-                                })
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = stringResource(R.string.export_path_pick),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                text = stringResource(R.string.export_path_current, currentExportPath ?: "Documents"),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
                         }
                     },
                     confirmButton = {
