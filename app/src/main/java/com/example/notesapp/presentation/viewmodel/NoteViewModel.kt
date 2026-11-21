@@ -386,7 +386,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "Catetan")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Download")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
 
