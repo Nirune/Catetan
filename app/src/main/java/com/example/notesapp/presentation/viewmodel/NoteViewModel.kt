@@ -7,6 +7,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -382,12 +383,30 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun saveToCatetanFolder(content: String, fileName: String, mimeType: String): Uri {
-        val resolver: ContentResolver = getApplication<Application>().contentResolver
+        val context = getApplication<Application>()
+        val resolver: ContentResolver = context.contentResolver
+
+        // Cek apakah ada path export custom yang disimpan
+        val savedUriString = ThemePreferences.exportPathUri
+        if (savedUriString != null) {
+            val savedUri = Uri.parse(savedUriString)
+            val dirFile = DocumentFile.fromTreeUri(context, savedUri)
+            if (dirFile != null) {
+                val newFile = dirFile.createFile(mimeType, fileName)
+                if (newFile != null) {
+                    resolver.openOutputStream(newFile.uri)?.use { outputStream ->
+                        outputStream.write(content.toByteArray())
+                    }
+                    return newFile.uri
+                }
+            }
+        }
+
+        // Fallback ke Downloads via MediaStore
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             put(MediaStore.MediaColumns.RELATIVE_PATH, "Download")
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
 
         val uri: Uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)

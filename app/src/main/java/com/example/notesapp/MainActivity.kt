@@ -26,6 +26,7 @@ import com.example.notesapp.presentation.ui.AddEditNoteScreen
 import com.example.notesapp.presentation.ui.AppTheme
 import com.example.notesapp.presentation.ui.NoteListScreen
 import com.example.notesapp.presentation.ui.ThemeMode
+import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.viewmodel.NoteViewModel
 
 class MainActivity : ComponentActivity() {
@@ -36,8 +37,14 @@ class MainActivity : ComponentActivity() {
         uri?.let { viewModel.importFromUri(it) }
     }
 
+    // Folder picker launcher untuk ganti path export
+    private val pickFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let { ThemePreferences.setExportPathUri(it.toString()) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemePreferences.init(this)
         enableEdgeToEdge()
         setContent {
             AppTheme(themeMode = remember { viewModel.themeMode }) {
@@ -51,6 +58,9 @@ class MainActivity : ComponentActivity() {
                         },
                         onPickFile = {
                             pickFileLauncher.launch(arrayOf<String>("*/*"))
+                        },
+                        onPickFolder = {
+                            pickFolderLauncher.launch(null)
                         }
                     )
                 }
@@ -63,7 +73,8 @@ class MainActivity : ComponentActivity() {
 fun NotesAppNavigation(
     viewModel: NoteViewModel,
     onThemeModeChanged: (ThemeMode) -> Unit,
-    onPickFile: () -> Unit
+    onPickFile: () -> Unit,
+    onPickFolder: () -> Unit
 ) {
     val navController = rememberNavController()
     var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
@@ -81,7 +92,8 @@ fun NotesAppNavigation(
                     navController.navigate("add_edit")
                 },
                 onThemeModeChanged = onThemeModeChanged,
-                onPickFile = onPickFile
+                onPickFile = onPickFile,
+                onPickFolder = onPickFolder
             )
         }
         composable("add_edit") {

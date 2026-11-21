@@ -76,6 +76,7 @@ enum class ThemeMode {
 object ThemePreferences {
     private const val PREFS_NAME = "catetan_prefs"
     private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_EXPORT_PATH_URI = "export_path_uri"
 
     private var prefs: SharedPreferences? = null
 
@@ -102,6 +103,13 @@ object ThemePreferences {
             ThemeMode.AUTO -> 2
         }
         prefs?.edit()?.putInt(KEY_THEME_MODE, value)?.apply()
+    }
+
+    val exportPathUri: String?
+        get() = prefs?.getString(KEY_EXPORT_PATH_URI, null)
+
+    fun setExportPathUri(uri: String?) {
+        prefs?.edit()?.putString(KEY_EXPORT_PATH_URI, uri)?.apply()
     }
 }
 

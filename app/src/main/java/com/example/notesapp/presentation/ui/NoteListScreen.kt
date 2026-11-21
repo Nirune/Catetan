@@ -1,5 +1,6 @@
 package com.example.notesapp.presentation.ui
 
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -53,7 +54,8 @@ fun NoteListScreen(
     onNoteClick: (NoteEntity) -> Unit = {},
     onAddClick: () -> Unit = {},
     onThemeModeChanged: (ThemeMode) -> Unit = {},
-    onPickFile: () -> Unit = {}
+    onPickFile: () -> Unit = {},
+    onPickFolder: () -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
     var showSingleExportDialog by remember { mutableStateOf(false) }
@@ -71,8 +73,11 @@ fun NoteListScreen(
     var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
     var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
 
+    var showPathDialog by remember { mutableStateOf(false) }
+
     val themeMode = viewModel.themeMode
     val isDark = isEffectiveDarkTheme(themeMode)
+    val currentExportPath = ThemePreferences.exportPathUri
 
     fun showSingleNoteExportDialog(note: NoteEntity) {
         pendingNoteForExport = note
@@ -152,6 +157,9 @@ fun NoteListScreen(
                     }
                     IconButton(onClick = { onPickFile() }) {
                         Icon(Icons.Default.Add, contentDescription = "Impor")
+                    }
+                    IconButton(onClick = { onPickFolder() }) {
+                        Icon(Icons.Default.Add, contentDescription = "Pilih folder export")
                     }
                     IconButton(onClick = { showThemeDialog = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
@@ -351,6 +359,42 @@ fun NoteListScreen(
                                     }
                                 }
                             }
+                        }
+
+                        // Path export section
+                        Text(
+                            text = stringResource(R.string.export_path_title),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 16.dp, bottom = 4.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = {
+                                    showThemeDialog = false
+                                    onPickFolder()
+                                })
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.export_path_pick),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                text = stringResource(R.string.export_path_current, currentExportPath ?: "Download"),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     },
                     confirmButton = {
