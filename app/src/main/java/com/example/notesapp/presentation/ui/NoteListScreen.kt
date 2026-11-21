@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -217,85 +219,68 @@ fun NoteListScreen(
                     title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
                     text = {
                         Column(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(0.dp)
+                            modifier = Modifier.padding(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
                                 text = stringResource(R.string.theme),
-                                style = MaterialTheme.typography.labelLarge.copy(
+                                style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = FontWeight.Medium
                                 ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .padding(horizontal = 16.dp)
-                                    .padding(top = 8.dp, bottom = 4.dp)
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 4.dp)
                             )
-                            ThemeModeOption(
-                                text = stringResource(R.string.theme_light),
-                                isSelected = themeMode == ThemeMode.LIGHT,
-                                onClick = {
-                                    onThemeModeChanged(ThemeMode.LIGHT)
-                                    showThemeDialog = false
+                            Column(
+                                modifier = Modifier.selectableGroup()
+                            ) {
+                                val options = listOf(
+                                    Pair(stringResource(R.string.theme_auto), ThemeMode.AUTO),
+                                    Pair(stringResource(R.string.theme_light), ThemeMode.LIGHT),
+                                    Pair(stringResource(R.string.theme_dark), ThemeMode.DARK)
+                                )
+                                options.forEachIndexed { _, (label, mode) ->
+                                    val isSelected = themeMode == mode
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(56.dp)
+                                            .selectable(
+                                                selected = isSelected,
+                                                enabled = true,
+                                                onClick = {
+                                                    onThemeModeChanged(mode)
+                                                    ThemePreferences.setThemeMode(mode)
+                                                    showThemeDialog = false
+                                                }
+                                            ),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = null,
+                                            colors = RadioButtonDefaults.colors(
+                                                selectedColor = MaterialTheme.colorScheme.primary,
+                                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                 }
-                            )
-                            ThemeModeOption(
-                                text = stringResource(R.string.theme_dark),
-                                isSelected = themeMode == ThemeMode.DARK,
-                                onClick = {
-                                    onThemeModeChanged(ThemeMode.DARK)
-                                    showThemeDialog = false
-                                }
-                            )
-                            ThemeModeOption(
-                                text = stringResource(R.string.theme_auto),
-                                isSelected = themeMode == ThemeMode.AUTO,
-                                onClick = {
-                                    onThemeModeChanged(ThemeMode.AUTO)
-                                    showThemeDialog = false
-                                }
-                            )
+                            }
                         }
                     },
                     confirmButton = {
                         TextButton(onClick = { showThemeDialog = false }) {
-                            Text(stringResource(android.R.string.ok))
+                            Text(stringResource(R.string.close))
                         }
                     }
                 )
             }
-        }
-    }
-}
-
-// Opsi mode tema dalam dialog pengaturan
-@Composable
-private fun ThemeModeOption(
-    text: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val selectionColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .background(if (isSelected) selectionColor else Color.Transparent, RoundedCornerShape(8.dp))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (isSelected) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        if (isSelected) {
-            Icon(
-                imageVector = Icons.Filled.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
         }
     }
 }
