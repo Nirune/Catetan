@@ -91,9 +91,15 @@ private val PaletteIcon: ImageVector = ImageVector.Builder(
     fill = SolidColor(Color.Black)
 ).build()
 
-// Fixed line height for the ruled-paper body (text layout). Nilai yang sama sebagai Dp dipakai untuk padding/layout.
+// Fixed line height for the ruled-paper body (text layout). Nilai yang sama dipakai untuk lineHeight,
+// padding atas teks, dan posisi garis bergaris, agar garis selalu sejajar dengan baseline teks
+// baik di mode lihat maupun mode edit.
 private val NoteLineHeight = 28.sp
-private val NoteLineHeightDp = 28.dp
+
+// Jarak vertikal antara baseline teks dan garis bergaris. Default (LineHeightStyle alignment = Center)
+// menempatkan baseline sekitar 10dp di atas garis; geser garis ke atas dengan offset ini agar gap
+// menjadi ~2-3dp (huruf g/y/p hampir menyentuh garis tanpa terpotong).
+private val RuleLineOffsetDp = 8.dp
 
 private data class UrlRange(val start: Int, val end: Int, val url: String)
 
@@ -467,6 +473,11 @@ fun AddEditNoteScreen(
                 .imePadding()
                 .navigationBarsPadding()
         ) {
+            // Jarak atas konten (teks) harus identik untuk mode lihat dan edit agar teks
+            // tidak bergeser saat beralih mode. Garis pertama digambar di bawah baris ini.
+            val contentTopPaddingPx = with(density) { NoteLineHeight.toPx() }
+            val contentTopPadding = with(density) { NoteLineHeight.toDp() }
+
             // Ruled-paper body: content scrolls together with the lines.
             PaperBody(
                 modifier = Modifier
@@ -481,8 +492,15 @@ fun AddEditNoteScreen(
                         leftPaddingPx = with(density) { 16.dp.toPx() }
                     )?.let { url -> openUrl(url) }
                 },
-                onDoubleTap = { enterEditMode() }
+                onDoubleTap = { enterEditMode() },
+                contentTopPaddingPx = contentTopPaddingPx
             ) { onTextLayout ->
+                val contentPadding = PaddingValues(
+                    top = contentTopPadding,
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = 0.dp
+                )
                 if (isEditing) {
                     BasicTextField(
                         value = contentValue,
@@ -513,7 +531,7 @@ fun AddEditNoteScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(PaddingValues(top = NoteLineHeightDp + 13.dp, start = 16.dp, end = 16.dp, bottom = 0.dp))
+                            .padding(contentPadding)
                             .focusRequester(focusRequester),
                         textStyle = bodyTextStyle,
                         cursorBrush = SolidColor(currentAccent),
@@ -539,7 +557,7 @@ fun AddEditNoteScreen(
                         style = bodyTextStyle,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(PaddingValues(top = NoteLineHeightDp, start = 16.dp, end = 16.dp, bottom = 0.dp)),
+                            .padding(contentPadding),
                         onTextLayout = onTextLayout
                     )
                 }
@@ -681,12 +699,14 @@ private fun PaperBody(
     gesturesEnabled: Boolean = false,
     onTap: ((Offset, TextLayoutResult) -> Unit)? = null,
     onDoubleTap: (() -> Unit)? = null,
+    contentTopPaddingPx: Float = 0f,
     content: @Composable (onTextLayout: (TextLayoutResult) -> Unit) -> Unit
 ) {
     val density = LocalDensity.current
     val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
     val spacingPx = with(density) { NoteLineHeight.toPx() }
     val strokePx = with(density) { 1.dp.toPx() }
+    val offsetPx = with(density) { RuleLineOffsetDp.toPx() }
     val textLayoutResult = remember { mutableStateOf<TextLayoutResult?>(null) }
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnDoubleTap by rememberUpdatedState(onDoubleTap)
@@ -720,7 +740,10 @@ private fun PaperBody(
                     .fillMaxWidth()
                     .heightIn(min = viewportHeight)
                     .drawBehind {
-                        var y = spacingPx
+                        // Garis pertama ditempatkan di contentTopPadding + spacingPx - offsetPx, lalu setiap
+                        // garis berikutnya di jarak spacingPx. offsetPx geser garis ke atas sehingga baseline
+                        // teks mendekati garis (~2-3dp, huruf g/y/p hampir menyentuh garis) tanpa memotongnya.
+                        var y = contentTopPaddingPx + spacingPx - offsetPx
                         while (y <= size.height) {
                             drawLine(
                                 color = lineColor,
