@@ -107,12 +107,32 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         exportNotesInternal(listOf(), format, isSingle = false)
     }
 
+    /**
+     * Membersihkan nama file: hapus karakter terlarang \ / : * ? " < > |,
+     * ganti spasi/tab ganda jadi satu spasi, trim, hapus titik di akhir,
+     * batasi maksimal 50 karakter.
+     */
+    fun sanitizeFileName(name: String): String {
+        return name
+            .replace("[\\\\/:*?\"<>|]".toRegex(), "")
+            .replace("[\\s]+".toRegex(), " ")
+            .trim()
+            .trimEnd('.')
+            .trim()
+            .take(50)
+    }
+
     fun exportCtn(customFilename: String? = null) {
         exportCtnInternal(customFilename)
     }
 
     fun exportSingleNote(note: NoteEntity, format: ExportFormat, customFilename: String? = null) {
-        exportNotesInternal(listOf(note), format, isSingle = true, customFilename = customFilename)
+        val resolvedFilename = customFilename?.takeIf { it.isNotEmpty() } ?: sanitizeFileName(
+            note.title.takeIf { it.isNotEmpty() }
+                ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() }
+                ?: "catetan"
+        )
+        exportNotesInternal(listOf(note), format, isSingle = true, customFilename = resolvedFilename)
     }
 
     /**
@@ -271,9 +291,13 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                     ExportFormat.MD -> exportToMarkdown(notesToExport)
                 }
 
-                val prefix = "catetan"
-                val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
-                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "${prefix}_export_$timestamp"
+                val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
+                val defaultBaseName = if (isSingle && notes.isNotEmpty()) {
+                    sanitizeFileName(notes.first().title.takeIf { it.isNotEmpty() } ?: notes.first().content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
+                } else {
+                    "catetan"
+                }
+                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "${defaultBaseName}_$timestamp"
                 val fileName = "$baseName.${format.name.lowercase()}"
                 val uri = saveToCatetanFolder(content, fileName, format.mimeType)
                 exportResult.value = ExportResult.Success(fileName, uri)
@@ -294,8 +318,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val content = exportToCtn(notesToExport)
-                val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
-                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "catetan-export-$timestamp"
+                val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
+                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "catetan_$timestamp"
                 val fileName = "$baseName.ctn"
                 val uri = saveToCatetanFolder(content, fileName, ctnMimeType)
                 exportResult.value = ExportResult.Success(fileName, uri)

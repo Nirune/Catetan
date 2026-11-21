@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.notesapp.data.model.NoteEntity
@@ -80,7 +82,9 @@ fun NoteListScreen(
     fun showSingleNoteExportDialog(note: NoteEntity) {
         pendingNoteForExport = note
         pendingFormatForExport = null
-        exportFilename = "catetan_export_${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}"
+        val baseName = viewModel.sanitizeFileName(note.title.takeIf { it.isNotEmpty() } ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
+        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
+        exportFilename = "${baseName}_$timestamp"
         showFilenameDialog = true
     }
 
@@ -146,7 +150,8 @@ fun NoteListScreen(
                 ),
                 actions = {
                     IconButton(onClick = {
-                        exportFilename = "catetan-export-${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}"
+                        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
+                        exportFilename = "catetan_$timestamp"
                         pendingNoteForExport = null
                         pendingFormatForExport = null
                         showFilenameDialog = true
@@ -210,9 +215,21 @@ fun NoteListScreen(
                     onDismissRequest = { showFilenameDialog = false },
                     title = { Text(stringResource(R.string.filename_title), fontWeight = FontWeight.Bold) },
                     text = {
+                        var dialogText by remember { mutableStateOf(exportFilename) }
+                        var dialogSelection by remember { mutableStateOf(TextRange(0, exportFilename.length)) }
+
+                        LaunchedEffect(exportFilename) {
+                            dialogText = exportFilename
+                            dialogSelection = TextRange(0, exportFilename.length)
+                        }
+
                         TextField(
-                            value = exportFilename,
-                            onValueChange = { exportFilename = it },
+                            value = TextFieldValue(text = dialogText, selection = dialogSelection),
+                            onValueChange = {
+                                dialogText = it.text
+                                dialogSelection = TextRange(it.text.length, it.text.length)
+                                exportFilename = it.text
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(R.string.filename_hint)) },
                             singleLine = true,
