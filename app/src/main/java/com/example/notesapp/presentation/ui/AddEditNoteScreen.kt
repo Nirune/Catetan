@@ -336,7 +336,7 @@ fun AddEditNoteScreen(
                             onValueChange = { title = it },
                             enabled = true,
                             placeholder = "Judul",
-                            textColor = MaterialTheme.colorScheme.onSurface,
+                            textColor = topBarContentColor,
                             surfaceColor = MaterialTheme.colorScheme.surface,
                             focusRequester = titleFocusRequester,
                         )
@@ -344,7 +344,7 @@ fun AddEditNoteScreen(
                         Text(
                             text = title.ifBlank { "(tanpa judul)" },
                             style = MaterialTheme.typography.titleLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = topBarContentColor,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium,
                             ),
