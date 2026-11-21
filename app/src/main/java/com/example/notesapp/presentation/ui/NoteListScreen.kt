@@ -63,12 +63,19 @@ fun NoteListScreen(
 
     var showThemeDialog by remember { mutableStateOf(false) }
 
+    var showFilenameDialog by remember { mutableStateOf(false) }
+    var exportFilename by remember { mutableStateOf("") }
+    var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
+    var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
+
     val themeMode = ThemePreferences.themeMode
     val isDark = isEffectiveDarkTheme(themeMode)
 
     fun showSingleNoteExportDialog(note: NoteEntity) {
-        noteToExport = note
-        showSingleExportDialog = true
+        pendingNoteForExport = note
+        pendingFormatForExport = null
+        exportFilename = "catetan_export_${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}"
+        showFilenameDialog = true
     }
 
     // Handle export result
@@ -107,7 +114,12 @@ fun NoteListScreen(
                     else MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
-                    IconButton(onClick = { viewModel.exportCtn() }) {
+                    IconButton(onClick = {
+                        exportFilename = "catetan-export-${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}"
+                        pendingNoteForExport = null
+                        pendingFormatForExport = null
+                        showFilenameDialog = true
+                    }) {
                         Icon(Icons.Default.Share, contentDescription = "Export")
                     }
                     IconButton(onClick = { showThemeDialog = true }) {
@@ -158,15 +170,64 @@ fun NoteListScreen(
                 }
             }
 
-            // Single Note Export Dialog
+            // Filename input dialog (shown before export)
+            if (showFilenameDialog) {
+                AlertDialog(
+                    onDismissRequest = { showFilenameDialog = false },
+                    title = { Text(stringResource(R.string.filename_title), fontWeight = FontWeight.Bold) },
+                    text = {
+                        TextField(
+                            value = exportFilename,
+                            onValueChange = { exportFilename = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(R.string.filename_hint)) },
+                            singleLine = true,
+                            maxLines = 1,
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showFilenameDialog = false
+                            if (pendingNoteForExport != null) {
+                                // Per-note export: show format dialog next
+                                noteToExport = pendingNoteForExport
+                                showSingleExportDialog = true
+                                pendingNoteForExport = null
+                            } else {
+                                // Global export (.ctn)
+                                viewModel.exportCtn(exportFilename)
+                            }
+                        }) {
+                            Text(stringResource(R.string.save))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            showFilenameDialog = false
+                            pendingNoteForExport = null
+                            pendingFormatForExport = null
+                        }) {
+                            Text(stringResource(R.string.close))
+                        }
+                    }
+                )
+            }
+
+            // Single Note Export Dialog (format picker)
             if (showSingleExportDialog && noteToExport != null) {
                 SingleNoteExportDialog(
                     note = noteToExport!!,
-                    onDismiss = { showSingleExportDialog = false },
-                    onExport = { format ->
-                        viewModel.exportSingleNote(noteToExport!!, format)
+                    customFilename = exportFilename,
+                    onDismiss = {
                         showSingleExportDialog = false
                         noteToExport = null
+                        pendingFormatForExport = null
+                    },
+                    onExport = { format ->
+                        viewModel.exportSingleNote(noteToExport!!, format, exportFilename)
+                        showSingleExportDialog = false
+                        noteToExport = null
+                        pendingFormatForExport = null
                     }
                 )
             }
@@ -277,6 +338,7 @@ fun NoteListScreen(
 @Composable
 fun SingleNoteExportDialog(
     note: NoteEntity,
+    customFilename: String? = null,
     onDismiss: () -> Unit,
     onExport: (ExportFormat) -> Unit
 ) {

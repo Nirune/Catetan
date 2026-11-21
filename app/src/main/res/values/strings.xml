@@ -6,4 +6,7 @@
     <string name="theme_dark">Gelap</string>
     <string name="theme_auto">Ikuti sistem</string>
     <string name="close">Tutup</string>
+    <string name="filename_title">Nama File</string>
+    <string name="filename_hint">Nama file (tanpa ekstensi)</string>
+    <string name="save">Simpan</string>
 </resources>

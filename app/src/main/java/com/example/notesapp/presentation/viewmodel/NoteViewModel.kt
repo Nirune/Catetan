@@ -91,15 +91,15 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         exportNotesInternal(listOf(), format, isSingle = false)
     }
 
-    fun exportCtn() {
-        exportCtnInternal()
+    fun exportCtn(customFilename: String? = null) {
+        exportCtnInternal(customFilename)
     }
 
-    fun exportSingleNote(note: NoteEntity, format: ExportFormat) {
-        exportNotesInternal(listOf(note), format, isSingle = true)
+    fun exportSingleNote(note: NoteEntity, format: ExportFormat, customFilename: String? = null) {
+        exportNotesInternal(listOf(note), format, isSingle = true, customFilename = customFilename)
     }
 
-    private fun exportNotesInternal(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean) {
+    private fun exportNotesInternal(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean, customFilename: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             exportResult.value = null
             try {
@@ -116,7 +116,9 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val prefix = "catetan"
-                val fileName = "${prefix}_export_${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}.${format.name.lowercase()}"
+                val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
+                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "${prefix}_export_$timestamp"
+                val fileName = "$baseName.${format.name.lowercase()}"
                 val uri = saveToDownloads(content, fileName, format.mimeType)
                 exportResult.value = ExportResult.Success(fileName, uri)
             } catch (e: Exception) {
@@ -125,7 +127,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun exportCtnInternal() {
+    private fun exportCtnInternal(customFilename: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             exportResult.value = null
             try {
@@ -136,7 +138,9 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val content = exportToCtn(notesToExport)
-                val fileName = "catetan-export-${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}.ctn"
+                val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
+                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "catetan-export-$timestamp"
+                val fileName = "$baseName.ctn"
                 val uri = saveToDownloads(content, fileName, ctnMimeType)
                 exportResult.value = ExportResult.Success(fileName, uri)
             } catch (e: Exception) {
