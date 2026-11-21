@@ -402,11 +402,11 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Fallback ke Downloads via MediaStore
+        // Fallback ke Documents via MediaStore
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "Download")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Documents")
         }
 
         val uri: Uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)

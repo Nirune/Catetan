@@ -370,7 +370,7 @@ fun NoteListScreen(
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
                                 .padding(horizontal = 16.dp)
-                                .padding(top = 16.dp, bottom = 4.dp)
+                                .padding(top = 20.dp, bottom = 4.dp)
                         )
                         Row(
                             modifier = Modifier
@@ -389,7 +389,7 @@ fun NoteListScreen(
                             )
                             Spacer(modifier = Modifier.weight(1f))
                             Text(
-                                text = stringResource(R.string.export_path_current, currentExportPath ?: "Download"),
+                                text = stringResource(R.string.export_path_current, currentExportPath ?: "Documents"),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
