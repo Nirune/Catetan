@@ -337,7 +337,7 @@ fun AddEditNoteScreen(
                             enabled = true,
                             placeholder = "Judul",
                             textColor = topBarContentColor,
-                            surfaceColor = MaterialTheme.colorScheme.surface,
+                            surfaceColor = if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.surface,
                             focusRequester = titleFocusRequester,
                         )
                     } else {
