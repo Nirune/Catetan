@@ -300,28 +300,52 @@ fun SingleNoteExportDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ekspor \"${note.title}\"", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                formats.forEach { item ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onExport(item.format) }
-                            .padding(16.dp)
-                    ) {
-                        Text(item.label, fontWeight = FontWeight.Medium, fontSize = 16.sp)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(item.desc, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(
+                    text = "Ekspor \"${note.title}\"",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                Column(
+                    modifier = Modifier.selectableGroup()
+                ) {
+                    formats.forEach { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clickable { onExport(item.format) }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = item.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = item.desc,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Batal") }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
         }
     )
 }
@@ -339,28 +363,52 @@ fun ExportMenuDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ekspor Catatan", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                formats.forEach { item ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onExport(item.format) }
-                            .padding(16.dp)
-                    ) {
-                        Text(item.label, fontWeight = FontWeight.Medium, fontSize = 16.sp)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(item.desc, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(
+                    text = "Ekspor Catatan",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                Column(
+                    modifier = Modifier.selectableGroup()
+                ) {
+                    formats.forEach { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clickable { onExport(item.format) }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = item.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = item.desc,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Batal") }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
         }
     )
 }
