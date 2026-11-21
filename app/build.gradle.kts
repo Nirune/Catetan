@@ -10,7 +10,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.github.nirune.catetan"
+        applicationId = "com.nirune.catetan"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
