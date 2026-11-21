@@ -1,5 +1,7 @@
 package com.example.notesapp.presentation.ui
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -7,6 +9,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 private val BrandPurple = Color(0xFF6750A4)
 private val BrandPurpleLight = Color(0xFFEADDFF)
@@ -66,12 +69,65 @@ private val DarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF49454E)
 )
 
+enum class ThemeMode {
+    LIGHT, DARK, AUTO
+}
+
+object ThemePreferences {
+    private const val PREFS_NAME = "catetan_prefs"
+    private const val KEY_THEME_MODE = "theme_mode"
+
+    private var prefs: SharedPreferences? = null
+
+    fun init(context: Context) {
+        if (prefs == null) {
+            prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+    }
+
+    val themeMode: ThemeMode
+        get() {
+            val prefs = prefs ?: return ThemeMode.AUTO
+            return when (prefs.getInt(KEY_THEME_MODE, 2)) {
+                0 -> ThemeMode.LIGHT
+                1 -> ThemeMode.DARK
+                else -> ThemeMode.AUTO
+            }
+        }
+
+    fun setThemeMode(mode: ThemeMode) {
+        val value = when (mode) {
+            ThemeMode.LIGHT -> 0
+            ThemeMode.DARK -> 1
+            ThemeMode.AUTO -> 2
+        }
+        prefs?.edit()?.putInt(KEY_THEME_MODE, value)?.apply()
+    }
+}
+
+/**
+ * Mengembalikan apakah tema gelap efektif, berdasarkan [themeMode]:
+ * - LIGHT: selalu terang
+ * - DARK: selalu gelap
+ * - AUTO: ikuti sistem
+ */
+@Composable
+fun isEffectiveDarkTheme(themeMode: ThemeMode): Boolean = when (themeMode) {
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+    ThemeMode.AUTO -> isSystemInDarkTheme()
+}
+
 @Composable
 fun AppTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.AUTO,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val context = LocalContext.current
+    ThemePreferences.init(context)
+
+    val effectiveDarkTheme = isEffectiveDarkTheme(themeMode)
+    val colorScheme = if (effectiveDarkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

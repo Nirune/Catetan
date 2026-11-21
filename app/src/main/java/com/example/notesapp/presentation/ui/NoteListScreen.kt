@@ -7,14 +7,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.example.notesapp.R
 import androidx.compose.ui.Modifier
@@ -25,6 +29,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.notesapp.data.model.NoteEntity
+import com.example.notesapp.presentation.ui.ThemeMode
+import com.example.notesapp.presentation.ui.ThemePreferences
+import com.example.notesapp.presentation.ui.isEffectiveDarkTheme
 import com.example.notesapp.presentation.viewmodel.ExportFormat
 import com.example.notesapp.presentation.viewmodel.ExportResult
 import com.example.notesapp.presentation.viewmodel.NoteViewModel
@@ -41,7 +48,8 @@ import java.util.Locale
 fun NoteListScreen(
     viewModel: NoteViewModel,
     onNoteClick: (NoteEntity) -> Unit = {},
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit = {},
+    onThemeModeChanged: (ThemeMode) -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
     var showExportMenu by remember { mutableStateOf(false) }
@@ -51,6 +59,11 @@ fun NoteListScreen(
     val exportResult by viewModel.exportResult.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    var showThemeDialog by remember { mutableStateOf(false) }
+
+    val themeMode = ThemePreferences.themeMode
+    val isDark = isEffectiveDarkTheme(themeMode)
 
     fun showSingleNoteExportDialog(note: NoteEntity) {
         noteToExport = note
@@ -87,14 +100,17 @@ fun NoteListScreen(
             TopAppBar(
                 title = { Text(stringResource(id = R.string.app_name), fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surface
+                    containerColor = if (isDark) MaterialTheme.colorScheme.surface
                     else MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.onSurface
+                    titleContentColor = if (isDark) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
                     IconButton(onClick = { showExportMenu = true }) {
                         Icon(Icons.Default.Share, contentDescription = "Export")
+                    }
+                    IconButton(onClick = { showThemeDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
                     }
                 }
             )
@@ -193,6 +209,93 @@ fun NoteListScreen(
                     }
                 )
             }
+
+            // Theme settings dialog
+            if (showThemeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showThemeDialog = false },
+                    title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.theme),
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp)
+                                    .padding(top = 8.dp, bottom = 4.dp)
+                            )
+                            ThemeModeOption(
+                                text = stringResource(R.string.theme_light),
+                                isSelected = themeMode == ThemeMode.LIGHT,
+                                onClick = {
+                                    onThemeModeChanged(ThemeMode.LIGHT)
+                                    showThemeDialog = false
+                                }
+                            )
+                            ThemeModeOption(
+                                text = stringResource(R.string.theme_dark),
+                                isSelected = themeMode == ThemeMode.DARK,
+                                onClick = {
+                                    onThemeModeChanged(ThemeMode.DARK)
+                                    showThemeDialog = false
+                                }
+                            )
+                            ThemeModeOption(
+                                text = stringResource(R.string.theme_auto),
+                                isSelected = themeMode == ThemeMode.AUTO,
+                                onClick = {
+                                    onThemeModeChanged(ThemeMode.AUTO)
+                                    showThemeDialog = false
+                                }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showThemeDialog = false }) {
+                            Text(stringResource(android.R.string.ok))
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+// Opsi mode tema dalam dialog pengaturan
+@Composable
+private fun ThemeModeOption(
+    text: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val selectionColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(if (isSelected) selectionColor else Color.Transparent, RoundedCornerShape(8.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isSelected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }

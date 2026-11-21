@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">Catetan</string>
+    <string name="settings_title">Pengaturan</string>
+    <string name="theme">Tema</string>
+    <string name="theme_light">Terang</string>
+    <string name="theme_dark">Gelap</string>
+    <string name="theme_auto">Ikuti sistem</string>
 </resources>

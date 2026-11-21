@@ -22,6 +22,8 @@ import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.presentation.ui.AddEditNoteScreen
 import com.example.notesapp.presentation.ui.AppTheme
 import com.example.notesapp.presentation.ui.NoteListScreen
+import com.example.notesapp.presentation.ui.ThemeMode
+import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.viewmodel.NoteViewModel
 
 class MainActivity : ComponentActivity() {
@@ -29,13 +31,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemePreferences.init(this)
         enableEdgeToEdge()
         setContent {
-            AppTheme {
+            var themeMode by remember { mutableStateOf(ThemePreferences.themeMode) }
+            AppTheme(themeMode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    NotesAppNavigation(viewModel)
+                    NotesAppNavigation(
+                        viewModel = viewModel,
+                        onThemeModeChanged = { newMode ->
+                            themeMode = newMode
+                            ThemePreferences.setThemeMode(newMode)
+                        }
+                    )
                 }
             }
         }
@@ -43,7 +53,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun NotesAppNavigation(viewModel: NoteViewModel) {
+fun NotesAppNavigation(
+    viewModel: NoteViewModel,
+    onThemeModeChanged: (ThemeMode) -> Unit
+) {
     val navController = rememberNavController()
     var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
 
@@ -58,7 +71,8 @@ fun NotesAppNavigation(viewModel: NoteViewModel) {
                 onAddClick = {
                     editingNote = null
                     navController.navigate("add_edit")
-                }
+                },
+                onThemeModeChanged = onThemeModeChanged
             )
         }
         composable("add_edit") {
