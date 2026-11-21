@@ -452,7 +452,7 @@ fun AddEditNoteScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = currentAccent,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    titleContentColor = topBarContentColor,
                     navigationIconContentColor = topBarContentColor,
                     actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
