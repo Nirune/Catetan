@@ -3,6 +3,7 @@ package com.example.notesapp.presentation.ui
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -28,8 +29,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material3.LocalContentColor
 import com.example.notesapp.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -349,8 +356,8 @@ fun NoteListScreen(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(notes, key = { it.id }) { note ->
                             val selected = isNoteSelected(note)
@@ -796,41 +803,45 @@ fun NoteItem(
     }
 
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
-    val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
 
-    Column(
-        modifier = Modifier.fillMaxWidth()
+    NoteCardSurface(
+        modifier = Modifier.fillMaxWidth(),
+        isSelected = isSelected,
+        isSelectionMode = isSelectionMode,
+        onClick = onClick,
+        onLongClick = onLongClick,
+        onToggleSelection = onToggleSelection
     ) {
+        // Content Row dengan drawBehind untuk bar warna vertikal kiri.
+        // drawBehind SEBELUM padding supaya koordinat relatif ke tepi kartu penuh.
+        // Padding konten: start=28dp (12 inset + 4 bar + 12 gap), vertikal 12dp.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(if (isSelected) selectionTint else MaterialTheme.colorScheme.surface)
-                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
-                .noteCardGesturesModifier(
-                    isSelectionMode = isSelectionMode,
-                    onClick = onClick,
-                    onLongClick = onLongClick,
-                    onToggleSelection = onToggleSelection
-                ),
+                .drawBehind {
+                    // Koordinat relatif tepi kartu penuh (sebelum padding konten)
+                    val insetPx = 12.dp.toPx()
+                    val barWidthPx = 4.dp.toPx()
+                    val height = size.height
+                    val barHeight = (height - 2 * insetPx).coerceAtLeast(0f)
+                    drawRoundRect(
+                        color = accentColor,
+                        topLeft = Offset(insetPx, insetPx),
+                        size = Size(barWidthPx, barHeight),
+                        cornerRadius = CornerRadius(barWidthPx / 2f)
+                    )
+                }
+                .padding(start = 28.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Vertical color strip (6dp pill shape, margin kiri 0 karena Row punya padding)
-            Box(
-                modifier = Modifier
-                    .width(6.dp)
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(accentColor)
-            )
-
-            // Content area (title + preview)
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+                // Content area (title + preview)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                 // Title
                 Text(
                     text = displayTitle,
@@ -909,13 +920,49 @@ fun NoteItem(
                 }
             }
         }
+    }
+}
 
-        // Divider tipis antar item (inset dari kiri, mulai dari teks)
-        Divider(
-            thickness = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-            modifier = Modifier.padding(start = 30.dp)
-        )
+/**
+ * Permukaan kartu seragam untuk grid & list: Card surfaceVariant, sudut 12dp,
+ * elevation 0, padding 12dp. Tint seleksi di atas Card.
+ * Dipakai oleh NoteCardGrid dan NoteItem agar gaya konsisten.
+ */
+@Composable
+fun NoteCardSurface(
+    modifier: Modifier = Modifier,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSelection: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(12.dp)
+            )
+            .then(
+                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                else Modifier
+            )
+            .noteCardGesturesModifier(
+                isSelectionMode = isSelectionMode,
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onToggleSelection = onToggleSelection
+            ),
+        contentAlignment = Alignment.TopStart
+    ) {
+        CompositionLocalProvider(LocalContentColor provides (if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)) {
+            content()
+        }
     }
 }
 
@@ -957,29 +1004,14 @@ fun NoteCardGrid(
     }
 
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
-    val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-    val cardBackground = MaterialTheme.colorScheme.surfaceVariant
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 120.dp)
-            .noteCardGesturesModifier(
-                isSelectionMode = isSelectionMode,
-                onClick = onClick,
-                onLongClick = onLongClick,
-                onToggleSelection = onToggleSelection
-            )
-            .then(
-                if (isSelected) Modifier.background(selectionTint, RoundedCornerShape(12.dp))
-                else Modifier
-            ),
-        colors = CardDefaults.cardColors(
-            containerColor = cardBackground,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    NoteCardSurface(
+        modifier = Modifier.heightIn(min = 120.dp),
+        isSelected = isSelected,
+        isSelectionMode = isSelectionMode,
+        onClick = onClick,
+        onLongClick = onLongClick,
+        onToggleSelection = onToggleSelection
     ) {
         Column(
             modifier = Modifier
