@@ -73,8 +73,6 @@ fun NoteListScreen(
     var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
     var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
 
-    var showPathDialog by remember { mutableStateOf(false) }
-
     val themeMode = viewModel.themeMode
     val isDark = isEffectiveDarkTheme(themeMode)
     val currentExportPath = ThemePreferences.exportPathUri
@@ -157,9 +155,6 @@ fun NoteListScreen(
                     }
                     IconButton(onClick = { onPickFile() }) {
                         Icon(Icons.Default.Add, contentDescription = "Impor")
-                    }
-                    IconButton(onClick = { onPickFolder() }) {
-                        Icon(Icons.Default.Add, contentDescription = "Pilih folder export")
                     }
                     IconButton(onClick = { showThemeDialog = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
