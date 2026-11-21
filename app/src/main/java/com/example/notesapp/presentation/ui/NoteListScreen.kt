@@ -54,7 +54,6 @@ fun NoteListScreen(
     onThemeModeChanged: (ThemeMode) -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
-    var showExportMenu by remember { mutableStateOf(false) }
     var showSingleExportDialog by remember { mutableStateOf(false) }
     var noteToExport by remember { mutableStateOf<NoteEntity?>(null) }
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
@@ -108,7 +107,7 @@ fun NoteListScreen(
                     else MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
-                    IconButton(onClick = { showExportMenu = true }) {
+                    IconButton(onClick = { viewModel.exportCtn() }) {
                         Icon(Icons.Default.Share, contentDescription = "Export")
                     }
                     IconButton(onClick = { showThemeDialog = true }) {
@@ -157,17 +156,6 @@ fun NoteListScreen(
                         )
                     }
                 }
-            }
-
-            // Export Menu Dialog (all notes)
-            if (showExportMenu) {
-                ExportMenuDialog(
-                    onDismiss = { showExportMenu = false },
-                    onExport = { format ->
-                        viewModel.exportNotes(format)
-                        showExportMenu = false
-                    }
-                )
             }
 
             // Single Note Export Dialog
@@ -308,69 +296,6 @@ fun SingleNoteExportDialog(
             ) {
                 Text(
                     text = "Ekspor \"${note.title}\"",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Column(
-                    modifier = Modifier.selectableGroup()
-                ) {
-                    formats.forEach { item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .clickable { onExport(item.format) }
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = item.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = item.desc,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.close))
-            }
-        }
-    )
-}
-
-@Composable
-fun ExportMenuDialog(
-    onDismiss: () -> Unit,
-    onExport: (ExportFormat) -> Unit
-) {
-    val formats = listOf(
-        ExportMenuItem(ExportFormat.TXT, "Text (.txt)", "Plain text sederhana"),
-        ExportMenuItem(ExportFormat.JSON, "JSON (.json)", "Format terstruktur untuk backup"),
-        ExportMenuItem(ExportFormat.MD, "Markdown (.md)", "Format markdown untuk docs")
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
-        text = {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Ekspor Catatan",
                     style = MaterialTheme.typography.labelLarge.copy(
                         fontWeight = FontWeight.Medium
                     ),

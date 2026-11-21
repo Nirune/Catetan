@@ -89,6 +89,10 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         exportNotesInternal(listOf(), format, isSingle = false)
     }
 
+    fun exportCtn() {
+        exportCtnInternal()
+    }
+
     fun exportSingleNote(note: NoteEntity, format: ExportFormat) {
         exportNotesInternal(listOf(note), format, isSingle = true)
     }
@@ -112,6 +116,26 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 val prefix = "catetan"
                 val fileName = "${prefix}_export_${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}.${format.name.lowercase()}"
                 val uri = saveToDownloads(content, fileName, format.mimeType)
+                exportResult.value = ExportResult.Success(fileName, uri)
+            } catch (e: Exception) {
+                exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
+            }
+        }
+    }
+
+    private fun exportCtnInternal() {
+        viewModelScope.launch(Dispatchers.IO) {
+            exportResult.value = null
+            try {
+                val notesToExport = repository.getAllNotesForExport()
+                if (notesToExport.isEmpty()) {
+                    exportResult.value = ExportResult.Error("Tidak ada catatan untuk diekspor")
+                    return@launch
+                }
+
+                val content = exportToCtn(notesToExport)
+                val fileName = "catetan-export-${DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())}.ctn"
+                val uri = saveToDownloads(content, fileName, ctnMimeType)
                 exportResult.value = ExportResult.Success(fileName, uri)
             } catch (e: Exception) {
                 exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
@@ -175,6 +199,27 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         return sb.toString()
     }
 
+    private fun exportToCtn(notes: List<NoteEntity>): String {
+        val json = Json { prettyPrint = true }
+        val exportData = mapOf(
+            "app" to "Catetan",
+            "version" to "1.0.0",
+            "exportedAt" to LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME),
+            "notes" to notes.map { note ->
+                mapOf(
+                    "id" to note.id,
+                    "title" to note.title,
+                    "content" to note.content,
+                    "createdAt" to note.createdAt,
+                    "updatedAt" to note.updatedAt,
+                    "isPinned" to note.isPinned,
+                    "color" to note.color
+                )
+            }
+        )
+        return json.encodeToString(exportData)
+    }
+
     private fun saveToDownloads(content: String, fileName: String, mimeType: String): Uri {
         val resolver: ContentResolver = getApplication<Application>().contentResolver
         val contentValues = ContentValues().apply {
@@ -201,4 +246,6 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             ExportFormat.JSON -> "application/json"
             ExportFormat.MD -> "text/markdown"
         }
+
+    val ctnMimeType: String = "application/x-catetan"
 }
