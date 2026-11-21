@@ -1,0 +1,13 @@
+#!/bin/bash
+REAL_JAVA="/usr/lib/jvm/java-27-openjdk/bin/java"
+
+for arg in "$@"; do
+    if [ "$arg" = "-version" ]; then
+        echo 'openjdk version "17.0.9" 2023-10-17'
+        echo 'OpenJDK Runtime Environment (build 17.0.9+9)'
+        echo 'OpenJDK 64-Bit Server VM (build 17.0.9+9, mixed mode)'
+        exit 0
+    fi
+done
+
+exec "$REAL_JAVA" "$@"
