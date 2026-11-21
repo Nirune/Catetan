@@ -1,8 +1,10 @@
 package com.example.notesapp.presentation.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,23 +12,28 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.example.notesapp.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextRange
@@ -49,6 +56,26 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+// Material "done_all" icon (official SVG path) built as a lightweight ImageVector,
+// sama seperti PaletteIcon di AddEditNoteScreen. Tidak perlu material-icons-extended.
+// Path resmi dari Material Icons (done_all, 24px): tiga centang bertumpuk.
+// Sumber: https://raw.githubusercontent.com/google/material-design-icons/master/src/image/palette/materialiconsoutlined/24px.svg
+private const val SELECT_ALL_PATH =
+    "M18,7l-1.41,-1.41 -6.34,6.34 1.41,1.41L18,7z" +
+        "M22.24,5.59L11.66,16.17 7.48,12l-1.41,1.41L11.66,19l12,-12 -1.42,-1.41z" +
+        "M0.41,13.41L6,19l1.41,-1.41L1.83,12 0.41,13.41z"
+
+private val SelectAllIcon: ImageVector = ImageVector.Builder(
+    name = "Outlined.SelectAll",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).addPath(
+    pathData = addPathNodes(SELECT_ALL_PATH),
+    fill = SolidColor(Color.Black)
+).build()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
@@ -63,6 +90,7 @@ fun NoteListScreen(
     var showSingleExportDialog by remember { mutableStateOf(false) }
     var noteToExport by remember { mutableStateOf<NoteEntity?>(null) }
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
+    var notesToDelete by remember { mutableStateOf<List<NoteEntity>>(emptyList()) }
     val exportResult by viewModel.exportResult.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -74,6 +102,57 @@ fun NoteListScreen(
     var exportFilename by remember { mutableStateOf("") }
     var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
     var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+    // Mode seleksi multi catatan
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedNoteIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+
+    fun isNoteSelected(note: NoteEntity): Boolean = selectedNoteIds.contains(note.id)
+
+    fun enterSelectionMode(noteId: Long) {
+        isSelectionMode = true
+        if (!selectedNoteIds.contains(noteId)) {
+            selectedNoteIds = selectedNoteIds + listOf(noteId)
+        }
+    }
+
+    fun toggleSelection(noteId: Long) {
+        if (selectedNoteIds.contains(noteId)) {
+            selectedNoteIds = selectedNoteIds - listOf(noteId)
+            if (selectedNoteIds.isEmpty()) {
+                isSelectionMode = false
+            }
+        } else {
+            selectedNoteIds = selectedNoteIds + listOf(noteId)
+        }
+    }
+
+    fun exitSelectionMode() {
+        isSelectionMode = false
+        selectedNoteIds = emptyList()
+        notesToDelete = emptyList()
+    }
+
+    fun toggleSelectAll() {
+        if (selectedNoteIds.size == notes.size && notes.isNotEmpty()) {
+            selectedNoteIds = emptyList()
+            // Tetap di mode seleksi, counter 0 / N
+        } else {
+            selectedNoteIds = notes.map { it.id }
+            isSelectionMode = true
+        }
+    }
+
+    // Bersihkan id seleksi yang sudah tidak ada di daftar (contoh: setelah hapus)
+    LaunchedEffect(notes) {
+        val validIds = notes.map { it.id }.toSet()
+        selectedNoteIds = selectedNoteIds.filter { validIds.contains(it) }
+        if (selectedNoteIds.isEmpty() && isSelectionMode) {
+            exitSelectionMode()
+        }
+        notesToDelete = notesToDelete.filter { validIds.contains(it.id) }
+    }
 
     val themeMode by viewModel.themeMode.collectAsState()
     val isDark = isEffectiveDarkTheme(themeMode)
@@ -140,43 +219,88 @@ fun NoteListScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(id = R.string.app_name), fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = if (isDark) MaterialTheme.colorScheme.surface
-                    else MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = if (isDark) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-                actions = {
-                    IconButton(onClick = {
-                        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
-                        exportFilename = "catetan_$timestamp"
-                        pendingNoteForExport = null
-                        pendingFormatForExport = null
-                        showFilenameDialog = true
-                    }) {
-                        Icon(Icons.Default.Share, contentDescription = "Export")
+            if (isSelectionMode) {
+                TopAppBar(
+                    title = { Text("${selectedNoteIds.size} / ${notes.size}") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = { exitSelectionMode() }) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Keluar seleksi",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    },
+                    actions = {
+                        val allSelected = selectedNoteIds.size == notes.size && notes.isNotEmpty()
+                        IconButton(onClick = { toggleSelectAll() }) {
+                            Icon(
+                                imageVector = SelectAllIcon,
+                                contentDescription = if (allSelected) "Batalkan semua" else "Pilih semua",
+                                tint = if (allSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        IconButton(onClick = {
+                            notesToDelete = notes.filter { selectedNoteIds.contains(it.id) }
+                            showDeleteConfirmation = true
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Hapus terpilih",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
-                    IconButton(onClick = { onPickFile() }) {
-                        Icon(Icons.Default.Add, contentDescription = "Impor")
+                )
+            } else {
+                TopAppBar(
+                    title = { Text(stringResource(id = R.string.app_name), fontWeight = FontWeight.Bold) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = if (isDark) MaterialTheme.colorScheme.surface
+                        else MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = if (isDark) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    actions = {
+                        IconButton(onClick = {
+                            val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
+                            exportFilename = "catetan_$timestamp"
+                            pendingNoteForExport = null
+                            pendingFormatForExport = null
+                            showFilenameDialog = true
+                        }) {
+                            Icon(Icons.Default.Share, contentDescription = "Export")
+                        }
+                        IconButton(onClick = { onPickFile() }) {
+                            Icon(Icons.Default.Add, contentDescription = "Impor")
+                        }
+                        IconButton(onClick = { showThemeDialog = true }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
+                        }
                     }
-                    IconButton(onClick = { showThemeDialog = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
-                    }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddClick,
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Note")
+            if (!isSelectionMode) {
+                FloatingActionButton(
+                    onClick = onAddClick,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Note")
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
+        BackHandler(enabled = isSelectionMode) {
+            exitSelectionMode()
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -198,9 +322,14 @@ fun NoteListScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(notes, key = { it.id }) { note ->
+                        val selected = isNoteSelected(note)
                         NoteItem(
                             note = note,
+                            isSelected = selected,
+                            isSelectionMode = isSelectionMode,
                             onClick = { onNoteClick(note) },
+                            onLongClick = { enterSelectionMode(note.id) },
+                            onToggleSelection = { toggleSelection(note.id) },
                             onDelete = { noteToDelete = note },
                             onPinToggle = { viewModel.togglePin(note.id) },
                             onExport = { showSingleNoteExportDialog(note) }
@@ -305,6 +434,40 @@ fun NoteListScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { noteToDelete = null }) {
+                            Text("Batal")
+                        }
+                    }
+                )
+            }
+
+            // Batch delete confirmation dialog (mode seleksi)
+            if (showDeleteConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirmation = false },
+                    title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
+                    text = {
+                        val pinnedCount = notesToDelete.count { it.isPinned }
+                        val base = "Catatan ${notesToDelete.size} akan dihapus permanen.\n\nLanjutkan?"
+                        val warning = if (pinnedCount > 0) {
+                            "\n\n${pinnedCount} di antaranya berbintang."
+                        } else ""
+                        Text(base + warning)
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val ids = notesToDelete.map { it.id }
+                                viewModel.deleteNotesByIds(ids)
+                                notesToDelete = emptyList()
+                                showDeleteConfirmation = false
+                                exitSelectionMode()
+                            }
+                        ) {
+                            Text("Hapus", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirmation = false }) {
                             Text("Batal")
                         }
                     }
@@ -502,7 +665,11 @@ private val PinActiveYellow = Color(0xFFFFD600)
 @Composable
 fun NoteItem(
     note: NoteEntity,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSelection: () -> Unit,
     onDelete: () -> Unit,
     onPinToggle: () -> Unit,
     onExport: (() -> Unit)? = null
@@ -523,6 +690,14 @@ fun NoteItem(
     }
 
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
+    val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+
+    // Selalu baca nilai terbaru dari state dan callback agar keputusan
+    // tap-vs-toggle tidak pakai nilai basi saat mode seleksi bertoggle.
+    val updatedIsSelectionMode by rememberUpdatedState(isSelectionMode)
+    val updatedOnClick by rememberUpdatedState(onClick)
+    val updatedOnToggleSelection by rememberUpdatedState(onToggleSelection)
+    val updatedOnLongClick by rememberUpdatedState(onLongClick)
 
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -530,9 +705,22 @@ fun NoteItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                .background(if (isSelected) selectionTint else MaterialTheme.colorScheme.surface)
+                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = {
+                            if (!updatedIsSelectionMode) updatedOnLongClick()
+                        },
+                        onTap = {
+                            if (!updatedIsSelectionMode) {
+                                updatedOnClick()
+                            } else {
+                                updatedOnToggleSelection()
+                            }
+                        }
+                    )
+                },
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -573,57 +761,59 @@ fun NoteItem(
                 }
             }
 
-            // Right side: date + actions
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = relativeDate,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Right side: date + actions (disembunyikan selama mode seleksi)
+            if (!isSelectionMode) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    IconButton(
-                        onClick = onPinToggle,
-                        modifier = Modifier.size(40.dp)
+                    Text(
+                        text = relativeDate,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = if (note.isPinned) "Unpin" else "Pin",
-                            modifier = Modifier.size(20.dp),
-                            tint = if (note.isPinned) PinActiveYellow
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    onExport?.let {
                         IconButton(
-                            onClick = it,
+                            onClick = onPinToggle,
                             modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Export",
+                                imageVector = Icons.Default.Star,
+                                contentDescription = if (note.isPinned) "Unpin" else "Pin",
+                                modifier = Modifier.size(20.dp),
+                                tint = if (note.isPinned) PinActiveYellow
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        onExport?.let {
+                            IconButton(
+                                onClick = it,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Export",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }

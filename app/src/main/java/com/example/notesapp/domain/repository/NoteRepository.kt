@@ -17,6 +17,8 @@ class NoteRepository(private val noteDao: NoteDao) {
 
     suspend fun deleteNoteById(id: Long) = noteDao.deleteNoteById(id)
 
+    suspend fun deleteNotesByIds(ids: List<Long>) = noteDao.deleteNotesByIds(ids)
+
     suspend fun togglePin(id: Long) = noteDao.togglePin(id)
 
     suspend fun getAllNotesForExport(): List<NoteEntity> = noteDao.getAllNotesList()

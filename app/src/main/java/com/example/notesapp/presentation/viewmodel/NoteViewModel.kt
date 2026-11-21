@@ -99,6 +99,12 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteNotesByIds(ids: List<Long>) {
+        viewModelScope.launch {
+            repository.deleteNotesByIds(ids)
+        }
+    }
+
     fun togglePin(id: Long) {
         viewModelScope.launch {
             repository.togglePin(id)

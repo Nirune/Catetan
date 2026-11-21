@@ -29,6 +29,9 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteNoteById(id: Long): Int
 
+    @Query("DELETE FROM notes WHERE id IN (:ids)")
+    suspend fun deleteNotesByIds(ids: List<Long>): Int
+
     @Query("UPDATE notes SET isPinned = NOT isPinned WHERE id = :id")
     suspend fun togglePin(id: Long): Int
 
