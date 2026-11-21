@@ -53,11 +53,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     val exportResult = MutableStateFlow<ExportResult?>(null)
     val importResult = MutableStateFlow<ImportResult?>(null)
 
-    var themeMode: ThemeMode
-        get() = ThemePreferences.themeMode
-        set(value) {
-            ThemePreferences.setThemeMode(value)
-        }
+    private val _themeMode = MutableStateFlow(ThemePreferences.themeMode)
+    val themeMode: StateFlow<ThemeMode> = _themeMode
 
     init {
         val noteDao = NotesDatabase.getDatabase(application).noteDao()
@@ -67,6 +64,11 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        ThemePreferences.setThemeMode(mode)
+        _themeMode.value = mode
     }
 
     fun addNote(title: String, content: String, color: Int = 0xFFFFF9C4.toInt()) {

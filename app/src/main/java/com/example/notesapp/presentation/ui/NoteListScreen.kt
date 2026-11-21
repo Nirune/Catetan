@@ -75,7 +75,7 @@ fun NoteListScreen(
     var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
     var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
 
-    val themeMode = viewModel.themeMode
+    val themeMode by viewModel.themeMode.collectAsState()
     val isDark = isEffectiveDarkTheme(themeMode)
     val currentExportPath = ThemePreferences.exportPathUri
 
@@ -391,8 +391,6 @@ fun NoteListScreen(
                                                 enabled = true,
                                                 onClick = {
                                                     onThemeModeChanged(mode)
-                                                    ThemePreferences.setThemeMode(mode)
-                                                    showThemeDialog = false
                                                 }
                                             ),
                                         verticalAlignment = Alignment.CenterVertically

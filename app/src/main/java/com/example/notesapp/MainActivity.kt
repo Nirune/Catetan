@@ -13,6 +13,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,14 +48,15 @@ class MainActivity : ComponentActivity() {
         ThemePreferences.init(this)
         enableEdgeToEdge()
         setContent {
-            AppTheme(themeMode = remember { viewModel.themeMode }) {
+            val themeMode by viewModel.themeMode.collectAsState()
+            AppTheme(themeMode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     NotesAppNavigation(
                         viewModel = viewModel,
                         onThemeModeChanged = { newMode ->
-                            viewModel.themeMode = newMode
+                            viewModel.setThemeMode(newMode)
                         },
                         onPickFile = {
                             pickFileLauncher.launch(arrayOf<String>("*/*"))
