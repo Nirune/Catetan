@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import java.io.OutputStream
 import java.time.Instant
 import java.time.LocalDateTime
@@ -201,19 +203,19 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun exportToCtn(notes: List<NoteEntity>): String {
         val json = Json { prettyPrint = true }
-        val exportData = mapOf(
-            "app" to "Catetan",
-            "version" to "1.0.0",
-            "exportedAt" to LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME),
-            "notes" to notes.map { note ->
-                mapOf(
-                    "id" to note.id,
-                    "title" to note.title,
-                    "content" to note.content,
-                    "createdAt" to note.createdAt,
-                    "updatedAt" to note.updatedAt,
-                    "isPinned" to note.isPinned,
-                    "color" to note.color
+        val exportData = CtnExport(
+            app = "Catetan",
+            version = "1.0.0",
+            exportedAt = LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME),
+            notes = notes.map { note ->
+                CtnNote(
+                    id = note.id,
+                    title = note.title,
+                    content = note.content,
+                    createdAt = note.createdAt,
+                    updatedAt = note.updatedAt,
+                    isPinned = note.isPinned,
+                    color = note.color
                 )
             }
         )
@@ -249,3 +251,22 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     val ctnMimeType: String = "application/x-catetan"
 }
+
+@Serializable
+data class CtnExport(
+    @SerialName("app") val app: String,
+    @SerialName("version") val version: String,
+    @SerialName("exportedAt") val exportedAt: String,
+    @SerialName("notes") val notes: List<CtnNote>
+)
+
+@Serializable
+data class CtnNote(
+    @SerialName("id") val id: Long,
+    @SerialName("title") val title: String,
+    @SerialName("content") val content: String,
+    @SerialName("createdAt") val createdAt: Long,
+    @SerialName("updatedAt") val updatedAt: Long,
+    @SerialName("isPinned") val isPinned: Boolean,
+    @SerialName("color") val color: Int
+)
