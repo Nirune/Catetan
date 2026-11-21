@@ -31,6 +31,7 @@ import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.domain.repository.NoteRepository
 import com.example.notesapp.presentation.ui.ThemeMode
 import com.example.notesapp.presentation.ui.ThemePreferences
+import com.example.notesapp.presentation.ui.ViewMode
 
 sealed interface ExportResult {
     data class Success(val fileName: String, val uri: Uri?) : ExportResult
@@ -56,6 +57,9 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     private val _themeMode = MutableStateFlow(ThemePreferences.themeMode)
     val themeMode: StateFlow<ThemeMode> = _themeMode
 
+    private val _viewMode = MutableStateFlow(ThemePreferences.viewMode)
+    val viewMode: StateFlow<ViewMode> = _viewMode
+
     init {
         val noteDao = NotesDatabase.getDatabase(application).noteDao()
         repository = NoteRepository(noteDao)
@@ -69,6 +73,11 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: ThemeMode) {
         ThemePreferences.setThemeMode(mode)
         _themeMode.value = mode
+    }
+
+    fun setViewMode(mode: ViewMode) {
+        ThemePreferences.setViewMode(mode)
+        _viewMode.value = mode
     }
 
     fun addNote(title: String, content: String, color: Int = 0xFFFFF9C4.toInt()) {

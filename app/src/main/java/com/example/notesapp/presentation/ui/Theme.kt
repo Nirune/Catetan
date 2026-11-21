@@ -73,10 +73,15 @@ enum class ThemeMode {
     LIGHT, DARK, AUTO
 }
 
+enum class ViewMode {
+    LIST, GRID
+}
+
 object ThemePreferences {
     private const val PREFS_NAME = "catetan_prefs"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_EXPORT_PATH_URI = "export_path_uri"
+    private const val KEY_VIEW_MODE = "view_mode"
 
     private var prefs: SharedPreferences? = null
 
@@ -110,6 +115,23 @@ object ThemePreferences {
 
     fun setExportPathUri(uri: String?) {
         prefs?.edit()?.putString(KEY_EXPORT_PATH_URI, uri)?.apply()
+    }
+
+    val viewMode: ViewMode
+        get() {
+            val prefs = prefs ?: return ViewMode.LIST
+            return when (prefs.getInt(KEY_VIEW_MODE, 0)) {
+                1 -> ViewMode.GRID
+                else -> ViewMode.LIST
+            }
+        }
+
+    fun setViewMode(mode: ViewMode) {
+        val value = when (mode) {
+            ViewMode.LIST -> 0
+            ViewMode.GRID -> 1
+        }
+        prefs?.edit()?.putInt(KEY_VIEW_MODE, value)?.apply()
     }
 }
 

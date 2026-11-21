@@ -9,6 +9,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -43,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.presentation.ui.ThemeMode
 import com.example.notesapp.presentation.ui.ThemePreferences
+import com.example.notesapp.presentation.ui.ViewMode
 import com.example.notesapp.presentation.ui.isEffectiveDarkTheme
 import com.example.notesapp.presentation.viewmodel.ExportFormat
 import com.example.notesapp.presentation.viewmodel.ExportResult
@@ -155,6 +160,7 @@ fun NoteListScreen(
     }
 
     val themeMode by viewModel.themeMode.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
     val isDark = isEffectiveDarkTheme(themeMode)
     val currentExportPath = ThemePreferences.exportPathUri
 
@@ -315,25 +321,51 @@ fun NoteListScreen(
                     )
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(notes, key = { it.id }) { note ->
-                        val selected = isNoteSelected(note)
-                        NoteItem(
-                            note = note,
-                            isSelected = selected,
-                            isSelectionMode = isSelectionMode,
-                            onClick = { onNoteClick(note) },
-                            onLongClick = { enterSelectionMode(note.id) },
-                            onToggleSelection = { toggleSelection(note.id) },
-                            onDelete = { noteToDelete = note },
-                            onPinToggle = { viewModel.togglePin(note.id) },
-                            onExport = { showSingleNoteExportDialog(note) }
-                        )
+                if (viewMode == ViewMode.GRID) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 160.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(notes, key = { it.id }) { note ->
+                            val selected = isNoteSelected(note)
+                            NoteCardGrid(
+                                note = note,
+                                isSelected = selected,
+                                isSelectionMode = isSelectionMode,
+                                onClick = { onNoteClick(note) },
+                                onLongClick = { enterSelectionMode(note.id) },
+                                onToggleSelection = { toggleSelection(note.id) },
+                                onDelete = { noteToDelete = note },
+                                onPinToggle = { viewModel.togglePin(note.id) },
+                                onExport = { showSingleNoteExportDialog(note) }
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(notes, key = { it.id }) { note ->
+                            val selected = isNoteSelected(note)
+                            NoteItem(
+                                note = note,
+                                isSelected = selected,
+                                isSelectionMode = isSelectionMode,
+                                onClick = { onNoteClick(note) },
+                                onLongClick = { enterSelectionMode(note.id) },
+                                onToggleSelection = { toggleSelection(note.id) },
+                                onDelete = { noteToDelete = note },
+                                onPinToggle = { viewModel.togglePin(note.id) },
+                                onExport = { showSingleNoteExportDialog(note) }
+                            )
+                        }
                     }
                 }
             }
@@ -526,6 +558,47 @@ fun NoteListScreen(
                                 modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
                             )
 
+                            // Tampilan section
+                            Text(
+                                text = stringResource(R.string.view_mode),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .clickable(onClick = {
+                                        viewModel.setViewMode(
+                                            if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+                                        )
+                                    })
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.view_mode_grid),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = viewMode == ViewMode.GRID,
+                                    onCheckedChange = { _ ->
+                                        viewModel.setViewMode(
+                                            if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+                                        )
+                                    }
+                                )
+                            }
+
+                            Divider(
+                                modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
+                            )
+
                             // Tema section
                             Text(
                                 text = stringResource(R.string.theme),
@@ -662,6 +735,39 @@ data class ExportMenuItem(
 // Bintang aktif (note di-pin): kuning terisi, konsisten di tema terang maupun gelap
 private val PinActiveYellow = Color(0xFFFFD600)
 
+/**
+ * Modifier gestur yang dipakai bersama oleh kartu daftar dan kartu grid.
+ * Membaca state seleksi TERBARU melalui rememberUpdatedState agar keputusan
+ * tap-vs-toggle tidak pakai nilai basi saat mode seleksi bertoggle.
+ */
+@Composable
+fun Modifier.noteCardGesturesModifier(
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSelection: () -> Unit
+): Modifier {
+    val updatedIsSelectionMode by rememberUpdatedState(isSelectionMode)
+    val updatedOnClick by rememberUpdatedState(onClick)
+    val updatedOnLongClick by rememberUpdatedState(onLongClick)
+    val updatedOnToggleSelection by rememberUpdatedState(onToggleSelection)
+
+    return this.then(pointerInput(Unit) {
+        detectTapGestures(
+            onLongPress = {
+                if (!updatedIsSelectionMode) updatedOnLongClick()
+            },
+            onTap = {
+                if (!updatedIsSelectionMode) {
+                    updatedOnClick()
+                } else {
+                    updatedOnToggleSelection()
+                }
+            }
+        )
+    })
+}
+
 @Composable
 fun NoteItem(
     note: NoteEntity,
@@ -692,13 +798,6 @@ fun NoteItem(
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
     val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
 
-    // Selalu baca nilai terbaru dari state dan callback agar keputusan
-    // tap-vs-toggle tidak pakai nilai basi saat mode seleksi bertoggle.
-    val updatedIsSelectionMode by rememberUpdatedState(isSelectionMode)
-    val updatedOnClick by rememberUpdatedState(onClick)
-    val updatedOnToggleSelection by rememberUpdatedState(onToggleSelection)
-    val updatedOnLongClick by rememberUpdatedState(onLongClick)
-
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -707,20 +806,12 @@ fun NoteItem(
                 .fillMaxWidth()
                 .background(if (isSelected) selectionTint else MaterialTheme.colorScheme.surface)
                 .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onLongPress = {
-                            if (!updatedIsSelectionMode) updatedOnLongClick()
-                        },
-                        onTap = {
-                            if (!updatedIsSelectionMode) {
-                                updatedOnClick()
-                            } else {
-                                updatedOnToggleSelection()
-                            }
-                        }
-                    )
-                },
+                .noteCardGesturesModifier(
+                    isSelectionMode = isSelectionMode,
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                    onToggleSelection = onToggleSelection
+                ),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -825,6 +916,167 @@ fun NoteItem(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
             modifier = Modifier.padding(start = 30.dp)
         )
+    }
+}
+
+/**
+ * Kartu note untuk tampilan grid. Card surfaceVariant, sudut 12dp.
+ * Layout sederhana: Column padding 12dp, urutan:
+ * 1. Bar warna note 6dp (ikut terpotong sudut)
+ * 2. Judul max 2 baris
+ * 3. Pratinjau max 3 baris
+ * 4. Spacer(weight=1f) mendorong bagian bawah ke tepi bawah
+ * 5. Tanggal + baris ikon (tinggi tetap, selalu tampil)
+ * Tint seleksi di atas Card. Semua teks pakai onSurface/onSurfaceVariant kontras.
+ */
+@Composable
+fun NoteCardGrid(
+    note: NoteEntity,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSelection: () -> Unit,
+    onDelete: () -> Unit,
+    onPinToggle: () -> Unit,
+    onExport: (() -> Unit)? = null
+) {
+    val displayTitle = remember(note.title, note.content) {
+        if (note.title.isNotBlank()) note.title
+        else note.content.takeWhile { it != '\n' }.take(50).trim()
+            .ifBlank { "Catatan tanpa judul" }
+    }
+
+    val previewText = remember(note.title, note.content) {
+        if (note.title.isNotBlank()) note.content
+        else ""
+    }.trim()
+
+    val relativeDate = remember(note.updatedAt) {
+        formatRelativeDate(note.updatedAt)
+    }
+
+    val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
+    val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    val cardBackground = MaterialTheme.colorScheme.surfaceVariant
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 120.dp)
+            .noteCardGesturesModifier(
+                isSelectionMode = isSelectionMode,
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onToggleSelection = onToggleSelection
+            )
+            .then(
+                if (isSelected) Modifier.background(selectionTint, RoundedCornerShape(12.dp))
+                else Modifier
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = cardBackground,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(accentColor)
+            )
+
+            // 2. Judul max 2 baris
+            Text(
+                text = displayTitle,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // 3. Pratinjau max 3 baris
+            if (previewText.isNotBlank()) {
+                Text(
+                    text = previewText,
+                    fontSize = 13.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 4. Spacer mendorong bagian bawah ke tepi bawah kartu
+            Spacer(modifier = Modifier.weight(1f))
+
+            // 5. Bawah: tanggal kiri + ikon kanan (selalu tampil, tidak terdorong)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = relativeDate,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (!isSelectionMode) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onPinToggle,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = if (note.isPinned) "Unpin" else "Pin",
+                                modifier = Modifier.size(20.dp),
+                                tint = if (note.isPinned) PinActiveYellow
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        onExport?.let {
+                            IconButton(
+                                onClick = it,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Export",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

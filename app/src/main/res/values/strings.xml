@@ -16,4 +16,6 @@
     <string name="export_path_pick">Pilih folder</string>
     <string name="export_path_current">Saat ini: %s</string>
     <string name="export_path_default">Documents</string>
+    <string name="view_mode">Tampilan</string>
+    <string name="view_mode_grid">Tampilan grid</string>
 </resources>
