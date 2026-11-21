@@ -1,11 +1,14 @@
 package com.example.notesapp
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
-import android.os.Build
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -23,27 +26,31 @@ import com.example.notesapp.presentation.ui.AddEditNoteScreen
 import com.example.notesapp.presentation.ui.AppTheme
 import com.example.notesapp.presentation.ui.NoteListScreen
 import com.example.notesapp.presentation.ui.ThemeMode
-import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.viewmodel.NoteViewModel
 
 class MainActivity : ComponentActivity() {
     private val viewModel: NoteViewModel by viewModels()
 
+    // File picker launcher untuk impor catatan
+    private val pickFileLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.importFromUri(it) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        ThemePreferences.init(this)
         enableEdgeToEdge()
         setContent {
-            var themeMode by remember { mutableStateOf(ThemePreferences.themeMode) }
-            AppTheme(themeMode = themeMode) {
+            AppTheme(themeMode = remember { viewModel.themeMode }) {
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     NotesAppNavigation(
                         viewModel = viewModel,
                         onThemeModeChanged = { newMode ->
-                            themeMode = newMode
-                            ThemePreferences.setThemeMode(newMode)
+                            viewModel.themeMode = newMode
+                        },
+                        onPickFile = {
+                            pickFileLauncher.launch(arrayOf<String>("*/*"))
                         }
                     )
                 }
@@ -55,7 +62,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NotesAppNavigation(
     viewModel: NoteViewModel,
-    onThemeModeChanged: (ThemeMode) -> Unit
+    onThemeModeChanged: (ThemeMode) -> Unit,
+    onPickFile: () -> Unit
 ) {
     val navController = rememberNavController()
     var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
@@ -72,7 +80,8 @@ fun NotesAppNavigation(
                     editingNote = null
                     navController.navigate("add_edit")
                 },
-                onThemeModeChanged = onThemeModeChanged
+                onThemeModeChanged = onThemeModeChanged,
+                onPickFile = onPickFile
             )
         }
         composable("add_edit") {

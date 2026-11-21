@@ -3,21 +3,19 @@ package com.example.notesapp.presentation.viewmodel
 import android.app.Application
 import android.content.ContentResolver
 import android.content.ContentValues
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import com.example.notesapp.data.database.NotesDatabase
-import com.example.notesapp.data.model.NoteEntity
-import com.example.notesapp.domain.repository.NoteRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
@@ -27,10 +25,20 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.example.notesapp.data.database.NotesDatabase
+import com.example.notesapp.data.model.NoteEntity
+import com.example.notesapp.domain.repository.NoteRepository
+import com.example.notesapp.presentation.ui.ThemeMode
+import com.example.notesapp.presentation.ui.ThemePreferences
 
 sealed interface ExportResult {
     data class Success(val fileName: String, val uri: Uri?) : ExportResult
     data class Error(val message: String) : ExportResult
+}
+
+sealed interface ImportResult {
+    data class Success(val importedCount: Int) : ImportResult
+    data class Error(val message: String) : ImportResult
 }
 
 enum class ExportFormat {
@@ -42,6 +50,13 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     val allNotes: StateFlow<List<NoteEntity>>
     val exportResult = MutableStateFlow<ExportResult?>(null)
+    val importResult = MutableStateFlow<ImportResult?>(null)
+
+    var themeMode: ThemeMode
+        get() = ThemePreferences.themeMode
+        set(value) {
+            ThemePreferences.setThemeMode(value)
+        }
 
     init {
         val noteDao = NotesDatabase.getDatabase(application).noteDao()
@@ -99,6 +114,146 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         exportNotesInternal(listOf(note), format, isSingle = true, customFilename = customFilename)
     }
 
+    /**
+     * Impor catatan dari file yang dipilih via Storage Access Framework.
+     * Mendukung .ctn (semua catatan), .txt/.json/.md (satu catatan).
+     */
+    fun importFromUri(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            importResult.value = null
+            try {
+                val resolver: ContentResolver = getApplication<Application>().contentResolver
+                val inputStream = resolver.openInputStream(uri) ?: throw IllegalStateException("Tidak dapat membuka file")
+                val content = inputStream.bufferedReader().use { it.readText() }
+
+                val fileName = getFileNameFromUri(resolver, uri) ?: "unknown"
+                val extension = fileName.substringAfterLast('.').lowercase()
+
+                val importedCount = when (extension) {
+                    "ctn" -> importCtn(content)
+                    "json" -> importSingleJson(content)
+                    "txt" -> importSingleTxt(content)
+                    "md" -> importSingleMd(content)
+                    else -> throw IllegalArgumentException("Format file tidak didukung: .$extension")
+                }
+
+                importResult.value = ImportResult.Success(importedCount)
+            } catch (e: Exception) {
+                importResult.value = ImportResult.Error("Gagal impor: ${e.message}")
+            }
+        }
+    }
+
+    private fun getFileNameFromUri(resolver: ContentResolver, uri: Uri): String? {
+        return resolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val columnIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                cursor.getString(columnIndex)
+            } else null
+        }
+    }
+
+    /**
+     * Impor semua catatan dari format .ctn (JSON Catetan).
+     */
+    private suspend fun importCtn(content: String): Int {
+        val json = Json { ignoreUnknownKeys = true }
+        val ctnExport = json.decodeFromString<CtnExport>(content)
+        var count = 0
+        ctnExport.notes.forEach { ctnNote ->
+            val note = NoteEntity(
+                id = 0, // biarkan Room generate id baru
+                title = ctnNote.title,
+                content = ctnNote.content,
+                createdAt = ctnNote.createdAt,
+                updatedAt = ctnNote.updatedAt,
+                isPinned = ctnNote.isPinned,
+                color = ctnNote.color
+            )
+            repository.insertNote(note)
+            count++
+        }
+        return count
+    }
+
+    /**
+     * Impor satu catatan dari JSON.
+     */
+    private suspend fun importSingleJson(content: String): Int {
+        val json = Json { ignoreUnknownKeys = true }
+        val noteMap = json.decodeFromString<Map<String, Any>>(content)
+        val title = noteMap["title"]?.toString() ?: "Tanpa Judul"
+        val contentText = noteMap["content"]?.toString() ?: ""
+        val isPinned = noteMap["isPinned"] as? Boolean ?: false
+        val color = noteMap["color"]?.toString()?.toIntOrNull() ?: 0xFFFFFFFF.toInt()
+        val createdAt = noteMap["createdAt"]?.toString()?.toLong() ?: Instant.now().toEpochMilli()
+        val updatedAt = noteMap["updatedAt"]?.toString()?.toLong() ?: Instant.now().toEpochMilli()
+
+        val note = NoteEntity(
+            id = 0,
+            title = title,
+            content = contentText,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            isPinned = isPinned,
+            color = color
+        )
+        repository.insertNote(note)
+        return 1
+    }
+
+    /**
+     * Impor satu catatan dari TXT (baris pertama = judul, sisanya = isi).
+     */
+    private suspend fun importSingleTxt(content: String): Int {
+        val lines = content.lines()
+        val title = lines.firstOrNull()?.takeIf { it.isNotEmpty() } ?: "Tanpa Judul"
+        val contentText = lines.drop(1).joinToString("\n").trimEnd()
+        val note = NoteEntity(
+            id = 0,
+            title = title,
+            content = contentText,
+            createdAt = Instant.now().toEpochMilli(),
+            updatedAt = Instant.now().toEpochMilli(),
+            isPinned = false,
+            color = 0xFFFFFFFF.toInt()
+        )
+        repository.insertNote(note)
+        return 1
+    }
+
+    /**
+     * Impor satu catatan dari Markdown (baris pertama dengan # = judul, sisanya = isi).
+     */
+    private suspend fun importSingleMd(content: String): Int {
+        val lines = content.lines()
+        var title = "Tanpa Judul"
+        var contentStartIndex = 0
+        for ((index, line) in lines.withIndex()) {
+            if (line.startsWith("# ")) {
+                title = line.removePrefix("# ").trim()
+                contentStartIndex = index + 1
+                break
+            } else if (line.isNotEmpty()) {
+                title = line.trim()
+                contentStartIndex = index + 1
+                break
+            }
+        }
+        val contentText = lines.drop(contentStartIndex).joinToString("\n").trimEnd()
+        val note = NoteEntity(
+            id = 0,
+            title = title,
+            content = contentText,
+            createdAt = Instant.now().toEpochMilli(),
+            updatedAt = Instant.now().toEpochMilli(),
+            isPinned = false,
+            color = 0xFFFFFFFF.toInt()
+        )
+        repository.insertNote(note)
+        return 1
+    }
+
     private fun exportNotesInternal(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean, customFilename: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             exportResult.value = null
@@ -119,7 +274,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
                 val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "${prefix}_export_$timestamp"
                 val fileName = "$baseName.${format.name.lowercase()}"
-                val uri = saveToDownloads(content, fileName, format.mimeType)
+                val uri = saveToCatetanFolder(content, fileName, format.mimeType)
                 exportResult.value = ExportResult.Success(fileName, uri)
             } catch (e: Exception) {
                 exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
@@ -141,7 +296,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
                 val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "catetan-export-$timestamp"
                 val fileName = "$baseName.ctn"
-                val uri = saveToDownloads(content, fileName, ctnMimeType)
+                val uri = saveToCatetanFolder(content, fileName, ctnMimeType)
                 exportResult.value = ExportResult.Success(fileName, uri)
             } catch (e: Exception) {
                 exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
@@ -226,22 +381,26 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         return json.encodeToString(exportData)
     }
 
-    private fun saveToDownloads(content: String, fileName: String, mimeType: String): Uri {
+    private fun saveToCatetanFolder(content: String, fileName: String, mimeType: String): Uri {
         val resolver: ContentResolver = getApplication<Application>().contentResolver
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            }
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Catetan")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
 
         val uri: Uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-            ?: throw IllegalStateException("Failed to create file")
+            ?: throw IllegalStateException("Gagal membuat file")
 
         resolver.openOutputStream(uri)?.use { outputStream ->
             outputStream.write(content.toByteArray())
-        } ?: throw IllegalStateException("Failed to write file")
+        } ?: throw IllegalStateException("Gagal menulis file")
+
+        // Hapus flag pending agar file terlihat oleh sistem
+        contentValues.clear()
+        contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+        resolver.update(uri, contentValues, null, null)
 
         return uri
     }

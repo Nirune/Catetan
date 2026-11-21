@@ -36,6 +36,7 @@ import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.ui.isEffectiveDarkTheme
 import com.example.notesapp.presentation.viewmodel.ExportFormat
 import com.example.notesapp.presentation.viewmodel.ExportResult
+import com.example.notesapp.presentation.viewmodel.ImportResult
 import com.example.notesapp.presentation.viewmodel.NoteViewModel
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -51,13 +52,15 @@ fun NoteListScreen(
     viewModel: NoteViewModel,
     onNoteClick: (NoteEntity) -> Unit = {},
     onAddClick: () -> Unit = {},
-    onThemeModeChanged: (ThemeMode) -> Unit = {}
+    onThemeModeChanged: (ThemeMode) -> Unit = {},
+    onPickFile: () -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
     var showSingleExportDialog by remember { mutableStateOf(false) }
     var noteToExport by remember { mutableStateOf<NoteEntity?>(null) }
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
     val exportResult by viewModel.exportResult.collectAsState()
+    val importResult by viewModel.importResult.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -68,7 +71,7 @@ fun NoteListScreen(
     var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
     var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
 
-    val themeMode = ThemePreferences.themeMode
+    val themeMode = viewModel.themeMode
     val isDark = isEffectiveDarkTheme(themeMode)
 
     fun showSingleNoteExportDialog(note: NoteEntity) {
@@ -103,6 +106,31 @@ fun NoteListScreen(
         }
     }
 
+    // Handle import result
+    LaunchedEffect(importResult) {
+        importResult?.let { result ->
+            when (result) {
+                is ImportResult.Success -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = "Berhasil impor: ${result.importedCount} catatan",
+                            actionLabel = "OK"
+                        )
+                    }
+                }
+                is ImportResult.Error -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = result.message,
+                            actionLabel = "OK"
+                        )
+                    }
+                }
+            }
+            viewModel.importResult.value = null
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -121,6 +149,9 @@ fun NoteListScreen(
                         showFilenameDialog = true
                     }) {
                         Icon(Icons.Default.Share, contentDescription = "Export")
+                    }
+                    IconButton(onClick = { onPickFile() }) {
+                        Icon(Icons.Default.Add, contentDescription = "Impor")
                     }
                     IconButton(onClick = { showThemeDialog = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
@@ -217,7 +248,6 @@ fun NoteListScreen(
             if (showSingleExportDialog && noteToExport != null) {
                 SingleNoteExportDialog(
                     note = noteToExport!!,
-                    customFilename = exportFilename,
                     onDismiss = {
                         showSingleExportDialog = false
                         noteToExport = null
@@ -338,7 +368,6 @@ fun NoteListScreen(
 @Composable
 fun SingleNoteExportDialog(
     note: NoteEntity,
-    customFilename: String? = null,
     onDismiss: () -> Unit,
     onExport: (ExportFormat) -> Unit
 ) {

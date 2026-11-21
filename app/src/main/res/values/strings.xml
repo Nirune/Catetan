@@ -9,4 +9,6 @@
     <string name="filename_title">Nama File</string>
     <string name="filename_hint">Nama file (tanpa ekstensi)</string>
     <string name="save">Simpan</string>
+    <string name="import_title">Impor Catatan</string>
+    <string name="import_pick_file">Pilih file untuk diimpor</string>
 </resources>
