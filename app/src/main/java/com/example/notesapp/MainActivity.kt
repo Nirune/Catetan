@@ -10,6 +10,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,13 +23,17 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Note
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -37,6 +44,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -58,6 +67,7 @@ import com.example.notesapp.presentation.viewmodel.SearchViewModel
 import com.example.notesapp.presentation.viewmodel.TodoViewModel
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -187,29 +197,36 @@ fun NotesAppNavigation(
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
                 ) {
                     val items = listOf(
                         NavigationBarItem(
-                            icon = { Icon(Icons.Default.Note, contentDescription = "Catatan") },
                             label = "Catatan",
-                            route = "notes"
+                            route = "notes",
+                            iconSelected = { Icon(Icons.Filled.Description, contentDescription = "Catatan") },
+                            iconUnselected = { Icon(Icons.Outlined.Description, contentDescription = "Catatan") }
                         ),
                         NavigationBarItem(
-                            icon = { Icon(Icons.Default.CheckBoxOutlineBlank, contentDescription = "Todo") },
                             label = "Todo",
-                            route = "todo"
+                            route = "todo",
+                            iconSelected = { Icon(Icons.Filled.Checklist, contentDescription = "Todo") },
+                            iconUnselected = { Icon(Icons.Outlined.Checklist, contentDescription = "Todo") }
                         ),
                         NavigationBarItem(
-                            icon = { Icon(Icons.Default.Search, contentDescription = "Cari") },
                             label = "Cari",
-                            route = "search"
+                            route = "search",
+                            iconSelected = { Icon(Icons.Filled.Search, contentDescription = "Cari") },
+                            iconUnselected = { Icon(Icons.Outlined.Search, contentDescription = "Cari") }
                         )
                     )
                     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route ?: "notes"
+                    val clampedDensity = with(LocalDensity.current) {
+                        Density(density, fontScale.coerceAtMost(1.3f))
+                    }
                     items.forEach { item ->
+                        val selected = currentRoute == item.route
                         NavigationBarItem(
-                            selected = currentRoute == item.route,
+                            selected = selected,
                             onClick = {
                                 navController.navigate(item.route) {
                                     // Save/restore state when switching tabs
@@ -218,16 +235,40 @@ fun NotesAppNavigation(
                                     restoreState = true
                                 }
                             },
-                            icon = item.icon,
-                            label = { Text(item.label) },
-                            alwaysShowLabel = false
+                            icon = if (selected) item.iconSelected else item.iconUnselected,
+                            label = {
+                                CompositionLocalProvider(LocalDensity provides clampedDensity) {
+                                    Text(
+                                        text = item.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            },
+                            alwaysShowLabel = true,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
                     }
                 }
             }
         }
     ) { innerPadding ->
-        NavHost(navController, startDestination = "notes") {
+        NavHost(
+            navController,
+            startDestination = "notes",
+            enterTransition = { fadeIn(animationSpec = tween(150)) },
+            exitTransition = { fadeOut(animationSpec = tween(100)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(150)) },
+            popExitTransition = { fadeOut(animationSpec = tween(100)) }
+        ) {
             composable("notes") {
                 NoteListScreen(
                     viewModel = noteViewModel,
@@ -290,9 +331,10 @@ fun NotesAppNavigation(
 }
 
 private data class NavigationBarItem(
-    val icon: @Composable () -> Unit,
     val label: String,
-    val route: String
+    val route: String,
+    val iconSelected: @Composable () -> Unit,
+    val iconUnselected: @Composable () -> Unit
 )
 
 @Composable

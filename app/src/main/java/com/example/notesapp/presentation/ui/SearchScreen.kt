@@ -315,7 +315,9 @@ private fun HistoryItem(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -369,77 +371,29 @@ private fun SearchResultItem(
     note: NoteEntity,
     onClick: () -> Unit
 ) {
-    val displayTitle = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.title
-        else note.content.takeWhile { it != '\n' }.take(50).trim()
-            .ifBlank { "Catatan tanpa judul" }
-    }
-    val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content else ""
-    }.trim()
-    val accentColor = NoteColorMapper.getNoteAccentColorNonComposable(note.color, false)
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                if (note.isPinned) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                RoundedCornerShape(12.dp)
-            )
-            .padding(12.dp),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (note.isPinned) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            }
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         onClick = onClick
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Color strip
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .fillMaxHeight(0.6f)
-                    .background(accentColor, RoundedCornerShape(2.dp))
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = displayTitle,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (note.isPinned) {
-                        Icon(
-                            imageVector = Icons.Filled.Star,
-                            contentDescription = "Diping",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                if (previewText.isNotBlank()) {
-                    Text(
-                        text = previewText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
+        NoteItem(
+            note = note,
+            isSelected = false,
+            isSelectionMode = true,
+            onClick = onClick,
+            onLongClick = onClick,
+            onToggleSelection = onClick,
+            onDelete = onClick,
+            onPinToggle = onClick,
+            onExport = null
+        )
     }
 }
