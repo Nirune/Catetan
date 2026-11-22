@@ -23,11 +23,11 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.draw.drawBehind
@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,7 +78,7 @@ private const val SELECT_ALL_PATH =
         "M22.24,5.59L11.66,16.17 7.48,12l-1.41,1.41L11.66,19l12,-12 -1.42,-1.41z" +
         "M0.41,13.41L6,19l1.41,-1.41L1.83,12 0.41,13.41z"
 
-private val SelectAllIcon: ImageVector = ImageVector.Builder(
+val SelectAllIcon: ImageVector = ImageVector.Builder(
     name = "Outlined.SelectAll",
     defaultWidth = 24.dp,
     defaultHeight = 24.dp,
@@ -88,12 +89,48 @@ private val SelectAllIcon: ImageVector = ImageVector.Builder(
     fill = SolidColor(Color.Black)
 ).build()
 
+// Custom Description (document) icon - Material Icons "description"
+private const val DESCRIPTION_PATH =
+    "M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"
+
+val DescriptionIcon: ImageVector = ImageVector.Builder(
+    name = "Filled.Description",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).addPath(
+    pathData = addPathNodes(DESCRIPTION_PATH),
+    fill = SolidColor(Color.Black)
+).build()
+
+// Custom StarOutline icon - Material Icons "star_border"
+private const val STAR_OUTLINE_PATH =
+    "M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.63L2,9.24L7.45,13.97L5.82,21L12,17.27Z"
+
+val StarOutlineIcon: ImageVector = ImageVector.Builder(
+    name = "Filled.StarOutline",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).addPath(
+    pathData = addPathNodes(STAR_OUTLINE_PATH),
+    fill = SolidColor(Color.Black)
+).build()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
     viewModel: NoteViewModel,
+    modifier: Modifier = Modifier,
+    isSelectionMode: Boolean,
+    selectedNoteIds: List<Long>,
+    onSelectionModeChange: (Boolean) -> Unit,
+    onSelectionChange: (List<Long>) -> Unit,
     onNoteClick: (NoteEntity) -> Unit = {},
     onAddClick: () -> Unit = {},
+    onTopBarCallbacks: ((() -> Unit, () -> Unit, () -> Unit) -> Unit)? = null,
     onThemeModeChanged: (ThemeMode) -> Unit = {},
     onPickFile: () -> Unit = {},
     onPickFolder: () -> Unit = {}
@@ -116,51 +153,57 @@ fun NoteListScreen(
     var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
-    // Mode seleksi multi catatan
-    var isSelectionMode by remember { mutableStateOf(false) }
-    var selectedNoteIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    // Provide top bar callbacks to parent (MainActivity) for NotesTopBar
+    val onExportClick = { showFilenameDialog = true }
+    val onSettingsClick = { showThemeDialog = true }
+    val onImportClick = onPickFile
+    onTopBarCallbacks?.let { it(onExportClick, onSettingsClick, onImportClick) }
 
     fun isNoteSelected(note: NoteEntity): Boolean = selectedNoteIds.contains(note.id)
 
     fun enterSelectionMode(noteId: Long) {
-        isSelectionMode = true
+        onSelectionModeChange(true)
         if (!selectedNoteIds.contains(noteId)) {
-            selectedNoteIds = selectedNoteIds + listOf(noteId)
+            onSelectionChange(selectedNoteIds + listOf(noteId))
         }
     }
 
     fun toggleSelection(noteId: Long) {
         if (selectedNoteIds.contains(noteId)) {
-            selectedNoteIds = selectedNoteIds - listOf(noteId)
-            if (selectedNoteIds.isEmpty()) {
-                isSelectionMode = false
+            val newSelection = selectedNoteIds - listOf(noteId)
+            onSelectionChange(newSelection)
+            if (newSelection.isEmpty()) {
+                onSelectionModeChange(false)
             }
         } else {
-            selectedNoteIds = selectedNoteIds + listOf(noteId)
+            onSelectionChange(selectedNoteIds + listOf(noteId))
         }
     }
 
     fun exitSelectionMode() {
-        isSelectionMode = false
-        selectedNoteIds = emptyList()
+        onSelectionModeChange(false)
+        onSelectionChange(emptyList())
         notesToDelete = emptyList()
     }
 
     fun toggleSelectAll() {
         if (selectedNoteIds.size == notes.size && notes.isNotEmpty()) {
-            selectedNoteIds = emptyList()
+            onSelectionChange(emptyList())
             // Tetap di mode seleksi, counter 0 / N
         } else {
-            selectedNoteIds = notes.map { it.id }
-            isSelectionMode = true
+            onSelectionChange(notes.map { it.id })
+            onSelectionModeChange(true)
         }
     }
 
     // Bersihkan id seleksi yang sudah tidak ada di daftar (contoh: setelah hapus)
     LaunchedEffect(notes) {
         val validIds = notes.map { it.id }.toSet()
-        selectedNoteIds = selectedNoteIds.filter { validIds.contains(it) }
-        if (selectedNoteIds.isEmpty() && isSelectionMode) {
+        val newSelection = selectedNoteIds.filter { validIds.contains(it) }
+        if (newSelection != selectedNoteIds) {
+            onSelectionChange(newSelection)
+        }
+        if (newSelection.isEmpty() && isSelectionMode) {
             exitSelectionMode()
         }
         notesToDelete = notesToDelete.filter { validIds.contains(it.id) }
@@ -230,517 +273,733 @@ fun NoteListScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (isSelectionMode) {
-                TopAppBar(
-                    title = { Text("${selectedNoteIds.size} / ${notes.size}") },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    navigationIcon = {
-                        IconButton(onClick = { exitSelectionMode() }) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = "Keluar seleksi",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    },
-                    actions = {
-                        val allSelected = selectedNoteIds.size == notes.size && notes.isNotEmpty()
-                        IconButton(onClick = { toggleSelectAll() }) {
-                            Icon(
-                                imageVector = SelectAllIcon,
-                                contentDescription = if (allSelected) "Batalkan semua" else "Pilih semua",
-                                tint = if (allSelected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        IconButton(onClick = {
-                            notesToDelete = notes.filter { selectedNoteIds.contains(it.id) }
-                            showDeleteConfirmation = true
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Hapus terpilih",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                )
-            } else {
-                TopAppBar(
-                    title = { Text(stringResource(id = R.string.app_name), fontWeight = FontWeight.Bold) },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = if (isDark) MaterialTheme.colorScheme.surface
-                        else MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = if (isDark) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    actions = {
-                        IconButton(onClick = {
-                            val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
-                            exportFilename = "catetan_$timestamp"
-                            pendingNoteForExport = null
-                            pendingFormatForExport = null
-                            showFilenameDialog = true
-                        }) {
-                            Icon(Icons.Default.Share, contentDescription = "Export")
-                        }
-                        IconButton(onClick = { onPickFile() }) {
-                            Icon(Icons.Default.Add, contentDescription = "Impor")
-                        }
-                        IconButton(onClick = { showThemeDialog = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
-                        }
-                    }
-                )
-            }
-        },
-        floatingActionButton = {
-            if (!isSelectionMode) {
-                FloatingActionButton(
-                    onClick = onAddClick,
-                    containerColor = MaterialTheme.colorScheme.primary
+    // Settings dialog - full version with Export Path, View Mode, and Theme
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Note")
+                    // Path export section
+                    Text(
+                        text = stringResource(R.string.export_path_title),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable(onClick = {
+                                showThemeDialog = false
+                                onPickFolder()
+                            })
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.export_path_pick),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = stringResource(
+                                R.string.export_path_current,
+                                currentExportPath ?: stringResource(R.string.export_path_default)
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Divider(
+                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
+                    )
+
+                    // Tampilan section
+                    Text(
+                        text = stringResource(R.string.view_mode),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable(onClick = {
+                                viewModel.setViewMode(
+                                    if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+                                )
+                            })
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.view_mode_grid),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = viewMode == ViewMode.GRID,
+                            onCheckedChange = { _ ->
+                                viewModel.setViewMode(
+                                    if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+                                )
+                            }
+                        )
+                    }
+
+                    Divider(
+                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
+                    )
+
+                    // Tema section
+                    Text(
+                        text = stringResource(R.string.theme),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Column(
+                        modifier = Modifier.selectableGroup()
+                    ) {
+                        val options = listOf(
+                            Pair(stringResource(R.string.theme_auto), ThemeMode.AUTO),
+                            Pair(stringResource(R.string.theme_light), ThemeMode.LIGHT),
+                            Pair(stringResource(R.string.theme_dark), ThemeMode.DARK)
+                        )
+                        options.forEach { (label, mode) ->
+                            val isSelected = themeMode == mode
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp)
+                                    .selectable(
+                                        selected = isSelected,
+                                        enabled = true,
+                                        onClick = {
+                                            onThemeModeChanged(mode)
+                                            showThemeDialog = false
+                                        }
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = null,
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = MaterialTheme.colorScheme.primary,
+                                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(text = label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) { Text(stringResource(R.string.close)) }
+            }
+        )
+    }
+
+    // Filename dialog
+    if (showFilenameDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showFilenameDialog = false
+                pendingNoteForExport = null
+                pendingFormatForExport = null
+            },
+            title = { Text(stringResource(R.string.filename_title), fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = exportFilename,
+                    onValueChange = { exportFilename = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.filename_hint)) },
+                    singleLine = true,
+                    maxLines = 1,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showFilenameDialog = false
+                    if (pendingNoteForExport != null) {
+                        noteToExport = pendingNoteForExport
+                        showSingleExportDialog = true
+                        pendingNoteForExport = null
+                    } else {
+                        viewModel.exportCtn(exportFilename)
+                    }
+                }) {
+                    Text(stringResource(R.string.save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showFilenameDialog = false
+                    pendingNoteForExport = null
+                    pendingFormatForExport = null
+                }) {
+                    Text(stringResource(R.string.close))
                 }
             }
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
+        )
+    }
+
+    // Single Note Export Dialog (format picker)
+    if (showSingleExportDialog && noteToExport != null) {
+        SingleNoteExportDialog(
+            note = noteToExport!!,
+            onDismiss = {
+                showSingleExportDialog = false
+                noteToExport = null
+                pendingFormatForExport = null
+            },
+            onExport = { format ->
+                viewModel.exportSingleNote(noteToExport!!, format, exportFilename)
+                showSingleExportDialog = false
+                noteToExport = null
+                pendingFormatForExport = null
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    noteToDelete?.let { note ->
+        AlertDialog(
+            onDismissRequest = { noteToDelete = null },
+            title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Catatan \"${note.title.ifBlank { "Catatan tanpa judul" }}\" " +
+                        "akan dihapus permanen.\n\nLanjutkan?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteNote(note)
+                        noteToDelete = null
+                    }
+                ) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { noteToDelete = null }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
+
+    // Batch delete confirmation dialog (mode seleksi)
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
+            text = {
+                val pinnedCount = notesToDelete.count { it.isPinned }
+                val base = "Catatan ${notesToDelete.size} akan dihapus permanen.\n\nLanjutkan?"
+                val warning = if (pinnedCount > 0) {
+                    "\n\n${pinnedCount} di antaranya berbintang."
+                } else ""
+                Text(base + warning)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val ids = notesToDelete.map { it.id }
+                        viewModel.deleteNotesByIds(ids)
+                        showDeleteConfirmation = false
+                        exitSelectionMode()
+                    }
+                ) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
+
+    // Main content - no Scaffold, just the list/grid
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+    ) {
         BackHandler(enabled = isSelectionMode) {
             exitSelectionMode()
         }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (notes.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+
+        if (notes.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = DescriptionIcon,
+                        contentDescription = "Catatan kosong",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "Belum ada catatan.\nTap tombol '+' di bawah buat bikin!",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 16.sp
+                        text = "Belum ada catatan",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tap tombol '+' di bawah buat bikin!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        textAlign = TextAlign.Center
                     )
                 }
-            } else {
-                if (viewMode == ViewMode.GRID) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 160.dp),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(notes, key = { it.id }) { note ->
-                            val selected = isNoteSelected(note)
-                            NoteCardGrid(
-                                note = note,
-                                isSelected = selected,
-                                isSelectionMode = isSelectionMode,
-                                onClick = { onNoteClick(note) },
-                                onLongClick = { enterSelectionMode(note.id) },
-                                onToggleSelection = { toggleSelection(note.id) },
-                                onDelete = { noteToDelete = note },
-                                onPinToggle = { viewModel.togglePin(note.id) },
-                                onExport = { showSingleNoteExportDialog(note) }
-                            )
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(notes, key = { it.id }) { note ->
-                            val selected = isNoteSelected(note)
-                            NoteItem(
-                                note = note,
-                                isSelected = selected,
-                                isSelectionMode = isSelectionMode,
-                                onClick = { onNoteClick(note) },
-                                onLongClick = { enterSelectionMode(note.id) },
-                                onToggleSelection = { toggleSelection(note.id) },
-                                onDelete = { noteToDelete = note },
-                                onPinToggle = { viewModel.togglePin(note.id) },
-                                onExport = { showSingleNoteExportDialog(note) }
-                            )
-                        }
-                    }
-                }
             }
-
-            // Filename input dialog (shown before export)
-            if (showFilenameDialog) {
-                AlertDialog(
-                    onDismissRequest = { showFilenameDialog = false },
-                    title = { Text(stringResource(R.string.filename_title), fontWeight = FontWeight.Bold) },
-                    text = {
-                        var dialogText by remember { mutableStateOf(exportFilename) }
-                        var dialogSelection by remember { mutableStateOf(TextRange(0, exportFilename.length)) }
-
-                        LaunchedEffect(exportFilename) {
-                            dialogText = exportFilename
-                            dialogSelection = TextRange(0, exportFilename.length)
-                        }
-
-                        TextField(
-                            value = TextFieldValue(text = dialogText, selection = dialogSelection),
-                            onValueChange = {
-                                dialogText = it.text
-                                dialogSelection = TextRange(it.text.length, it.text.length)
-                                exportFilename = it.text
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(stringResource(R.string.filename_hint)) },
-                            singleLine = true,
-                            maxLines = 1,
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            showFilenameDialog = false
-                            if (pendingNoteForExport != null) {
-                                // Per-note export: show format dialog next
-                                noteToExport = pendingNoteForExport
-                                showSingleExportDialog = true
-                                pendingNoteForExport = null
-                            } else {
-                                // Global export (.ctn)
-                                viewModel.exportCtn(exportFilename)
-                            }
-                        }) {
-                            Text(stringResource(R.string.save))
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = {
-                            showFilenameDialog = false
-                            pendingNoteForExport = null
-                            pendingFormatForExport = null
-                        }) {
-                            Text(stringResource(R.string.close))
-                        }
-                    }
-                )
-            }
-
-            // Single Note Export Dialog (format picker)
-            if (showSingleExportDialog && noteToExport != null) {
-                SingleNoteExportDialog(
-                    note = noteToExport!!,
-                    onDismiss = {
-                        showSingleExportDialog = false
-                        noteToExport = null
+        } else {
+            when (viewMode) {
+                ViewMode.LIST -> NoteListContent(
+                    notes = notes,
+                    isSelectionMode = isSelectionMode,
+                    selectedNoteIds = selectedNoteIds,
+                    onNoteClick = onNoteClick,
+                    onLongClick = { noteId -> enterSelectionMode(noteId) },
+                    onToggleSelection = { noteId -> toggleSelection(noteId) },
+                    onDelete = { noteToDelete = it },
+                    onPinToggle = { noteId -> viewModel.togglePin(noteId) },
+                    onExport = { note ->
+                        pendingNoteForExport = note
                         pendingFormatForExport = null
+                        val baseName = viewModel.sanitizeFileName(note.title.takeIf { it.isNotEmpty() } ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
+                        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
+                        exportFilename = "${baseName}_$timestamp"
+                        showFilenameDialog = true
                     },
-                    onExport = { format ->
-                        viewModel.exportSingleNote(noteToExport!!, format, exportFilename)
-                        showSingleExportDialog = false
-                        noteToExport = null
+                    accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
+                )
+                ViewMode.GRID -> NoteGridContent(
+                    notes = notes,
+                    isSelectionMode = isSelectionMode,
+                    selectedNoteIds = selectedNoteIds,
+                    onNoteClick = onNoteClick,
+                    onLongClick = { noteId -> enterSelectionMode(noteId) },
+                    onToggleSelection = { noteId -> toggleSelection(noteId) },
+                    onDelete = { noteToDelete = it },
+                    onPinToggle = { noteId -> viewModel.togglePin(noteId) },
+                    onExport = { note ->
+                        pendingNoteForExport = note
                         pendingFormatForExport = null
-                    }
-                )
-            }
-
-            // Delete confirmation dialog
-            noteToDelete?.let { note ->
-                AlertDialog(
-                    onDismissRequest = { noteToDelete = null },
-                    title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
-                    text = {
-                        Text(
-                            "Catatan \"${note.title.ifBlank { "Catatan tanpa judul" }}\" " +
-                                "akan dihapus permanen.\n\nLanjutkan?"
-                        )
+                        val baseName = viewModel.sanitizeFileName(note.title.takeIf { it.isNotEmpty() } ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
+                        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
+                        exportFilename = "${baseName}_$timestamp"
+                        showFilenameDialog = true
                     },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                viewModel.deleteNote(note)
-                                noteToDelete = null
-                            }
-                        ) {
-                            Text("Hapus", color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { noteToDelete = null }) {
-                            Text("Batal")
-                        }
-                    }
-                )
-            }
-
-            // Batch delete confirmation dialog (mode seleksi)
-            if (showDeleteConfirmation) {
-                AlertDialog(
-                    onDismissRequest = { showDeleteConfirmation = false },
-                    title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
-                    text = {
-                        val pinnedCount = notesToDelete.count { it.isPinned }
-                        val base = "Catatan ${notesToDelete.size} akan dihapus permanen.\n\nLanjutkan?"
-                        val warning = if (pinnedCount > 0) {
-                            "\n\n${pinnedCount} di antaranya berbintang."
-                        } else ""
-                        Text(base + warning)
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                val ids = notesToDelete.map { it.id }
-                                viewModel.deleteNotesByIds(ids)
-                                notesToDelete = emptyList()
-                                showDeleteConfirmation = false
-                                exitSelectionMode()
-                            }
-                        ) {
-                            Text("Hapus", color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showDeleteConfirmation = false }) {
-                            Text("Batal")
-                        }
-                    }
-                )
-            }
-
-            // Theme settings dialog
-            if (showThemeDialog) {
-                AlertDialog(
-                    onDismissRequest = { showThemeDialog = false },
-                    title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
-                    text = {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Path export section
-                            Text(
-                                text = stringResource(R.string.export_path_title),
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                                    .clickable(onClick = {
-                                        showThemeDialog = false
-                                        onPickFolder()
-                                    })
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.export_path_pick),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text(
-                                    text = stringResource(
-                                        R.string.export_path_current,
-                                        currentExportPath ?: stringResource(R.string.export_path_default)
-                                    ),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-
-                            Divider(
-                                modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
-                            )
-
-                            // Tampilan section
-                            Text(
-                                text = stringResource(R.string.view_mode),
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                                    .clickable(onClick = {
-                                        viewModel.setViewMode(
-                                            if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
-                                        )
-                                    })
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.view_mode_grid),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                                Switch(
-                                    checked = viewMode == ViewMode.GRID,
-                                    onCheckedChange = { _ ->
-                                        viewModel.setViewMode(
-                                            if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
-                                        )
-                                    }
-                                )
-                            }
-
-                            Divider(
-                                modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
-                            )
-
-                            // Tema section
-                            Text(
-                                text = stringResource(R.string.theme),
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-                            Column(
-                                modifier = Modifier.selectableGroup()
-                            ) {
-                                val options = listOf(
-                                    Pair(stringResource(R.string.theme_auto), ThemeMode.AUTO),
-                                    Pair(stringResource(R.string.theme_light), ThemeMode.LIGHT),
-                                    Pair(stringResource(R.string.theme_dark), ThemeMode.DARK)
-                                )
-                                options.forEachIndexed { _, (label, mode) ->
-                                    val isSelected = themeMode == mode
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(56.dp)
-                                            .selectable(
-                                                selected = isSelected,
-                                                enabled = true,
-                                                onClick = {
-                                                    onThemeModeChanged(mode)
-                                                }
-                                            ),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        RadioButton(
-                                            selected = isSelected,
-                                            onClick = null,
-                                            colors = RadioButtonDefaults.colors(
-                                                selectedColor = MaterialTheme.colorScheme.primary,
-                                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showThemeDialog = false }) {
-                            Text(stringResource(R.string.close))
-                        }
-                    }
+                    accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
                 )
             }
         }
     }
 }
 
-// Single note export dialog
+// Content for LIST view
 @Composable
-fun SingleNoteExportDialog(
-    note: NoteEntity,
-    onDismiss: () -> Unit,
-    onExport: (ExportFormat) -> Unit
+private fun NoteListContent(
+    notes: List<NoteEntity>,
+    isSelectionMode: Boolean,
+    selectedNoteIds: List<Long>,
+    onNoteClick: (NoteEntity) -> Unit,
+    onLongClick: (Long) -> Unit,
+    onToggleSelection: (Long) -> Unit,
+    onDelete: (NoteEntity) -> Unit,
+    onPinToggle: (Long) -> Unit,
+    onExport: (NoteEntity) -> Unit,
+    accentColorProvider: (NoteEntity) -> Color
 ) {
-    val formats = listOf(
-        ExportMenuItem(ExportFormat.TXT, "Text (.txt)", "Plain text sederhana"),
-        ExportMenuItem(ExportFormat.JSON, "JSON (.json)", "Format terstruktur untuk backup"),
-        ExportMenuItem(ExportFormat.MD, "Markdown (.md)", "Format markdown untuk docs")
-    )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(notes) { note ->
+            val isSelected = selectedNoteIds.contains(note.id)
+            NoteCardSurface(
+                modifier = Modifier.fillMaxWidth(),
+                isSelected = isSelected,
+                isSelectionMode = isSelectionMode,
+                onClick = { onNoteClick(note) },
+                onLongClick = { onLongClick(note.id) },
+                onToggleSelection = { onToggleSelection(note.id) },
+                accentColor = accentColorProvider(note)
+            ) {
+                NoteItem(
+                    note = note,
+                    isSelected = isSelected,
+                    isSelectionMode = isSelectionMode,
+                    onClick = { onNoteClick(note) },
+                    onLongClick = { onLongClick(note.id) },
+                    onToggleSelection = { onToggleSelection(note.id) },
+                    onDelete = { onDelete(note) },
+                    onPinToggle = { onPinToggle(note.id) },
+                    onExport = { onExport(note) }
+                )
+            }
+        }
+    }
+}
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
-        text = {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+// Content for GRID view
+@Composable
+private fun NoteGridContent(
+    notes: List<NoteEntity>,
+    isSelectionMode: Boolean,
+    selectedNoteIds: List<Long>,
+    onNoteClick: (NoteEntity) -> Unit,
+    onLongClick: (Long) -> Unit,
+    onToggleSelection: (Long) -> Unit,
+    onDelete: (NoteEntity) -> Unit,
+    onPinToggle: (Long) -> Unit,
+    onExport: (NoteEntity) -> Unit,
+    accentColorProvider: (NoteEntity) -> Color
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 160.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(notes) { note ->
+            val isSelected = selectedNoteIds.contains(note.id)
+            NoteCardSurface(
+                modifier = Modifier.height(200.dp),
+                isSelected = isSelected,
+                isSelectionMode = isSelectionMode,
+                onClick = { onNoteClick(note) },
+                onLongClick = { onLongClick(note.id) },
+                onToggleSelection = { onToggleSelection(note.id) },
+                accentColor = accentColorProvider(note)
+            ) {
+                NoteCardGrid(
+                    note = note,
+                    isSelected = isSelected,
+                    isSelectionMode = isSelectionMode,
+                    onClick = { onNoteClick(note) },
+                    onLongClick = { onLongClick(note.id) },
+                    onToggleSelection = { onToggleSelection(note.id) },
+                    onDelete = { onDelete(note) },
+                    onPinToggle = { onPinToggle(note.id) },
+                    onExport = { onExport(note) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Permukaan kartu seragam untuk grid & list: Card surfaceVariant, sudut 12dp,
+ * elevation 0, padding 12dp. Tint seleksi di atas Card.
+ * Dipakai oleh NoteCardGrid dan NoteItem agar gaya konsisten.
+ */
+@Composable
+fun NoteCardSurface(
+    modifier: Modifier = Modifier,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSelection: () -> Unit,
+    accentColor: Color,
+    content: @Composable () -> Unit
+) {
+    val containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                containerColor,
+                RoundedCornerShape(12.dp)
+            )
+            .then(
+                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                else Modifier
+            )
+            .noteCardGesturesModifier(
+                isSelectionMode = isSelectionMode,
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onToggleSelection = onToggleSelection
+            ),
+        contentAlignment = Alignment.TopStart
+    ) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            content()
+        }
+    }
+}
+
+/**
+ * Item catatan untuk tampilan LIST (horizontal).
+ * Isi: bar warna kiri (4dp, radius 2dp, inset 12dp atas/bawah, gap 12dp ke teks),
+ * judul max 2 baris, pratinjau max 3 baris, tanggal + ikon pin/share/delete.
+ */
+@Composable
+fun NoteItem(
+    note: NoteEntity,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSelection: () -> Unit,
+    onDelete: () -> Unit,
+    onPinToggle: () -> Unit,
+    onExport: (() -> Unit)? = null
+) {
+    val displayTitle = remember(note.title, note.content) {
+        if (note.title.isNotBlank()) note.title
+        else note.content.takeWhile { it != '\n' }.take(50).trim()
+            .ifBlank { "Catatan tanpa judul" }
+    }
+
+    val previewText = remember(note.title, note.content) {
+        if (note.title.isNotBlank()) note.content
+        else ""
+    }.trim()
+
+    val relativeDate = remember(note.updatedAt) {
+        formatRelativeDate(note.updatedAt)
+    }
+
+    val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
+
+    // Content Row dengan drawBehind untuk bar warna vertikal kiri.
+    // drawBehind SEBELUM padding supaya koordinat relatif ke tepi kartu penuh.
+    // Padding konten: start=28dp (12 inset + 4 bar + 12 gap), vertikal 12dp.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                // Koordinat relatif tepi kartu penuh (sebelum padding konten)
+                val insetPx = 12.dp.toPx()
+                val barWidthPx = 4.dp.toPx()
+                val height = size.height
+                val barHeight = (height - 2 * insetPx).coerceAtLeast(0f)
+                drawRoundRect(
+                    color = accentColor,
+                    topLeft = Offset(insetPx, insetPx),
+                    size = Size(barWidthPx, barHeight),
+                    cornerRadius = CornerRadius(barWidthPx / 2f)
+                )
+            }
+            .padding(start = 28.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .heightIn(min = 0.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Judul max 2 baris
+            Text(
+                text = displayTitle,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // Pratinjau max 3 baris
+            if (previewText.isNotBlank()) {
+                Text(
+                    text = previewText,
+                    fontSize = 13.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Tanggal + ikon
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Ekspor \"${note.title}\"",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    text = relativeDate,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Column(
-                    modifier = Modifier.selectableGroup()
-                ) {
-                    formats.forEach { item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .clickable { onExport(item.format) }
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = item.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
+
+                if (!isSelectionMode) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onPinToggle) {
+                            Icon(
+                                imageVector = if (note.isPinned) Icons.Filled.Star else StarOutlineIcon,
+                                contentDescription = if (note.isPinned) "Batal pin" else "Pin",
+                                tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = item.desc,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        }
+                        IconButton(onClick = onExport ?: {}) {
+                            Icon(Icons.Filled.Share, contentDescription = "Ekspor", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = onDelete) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Hapus", tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.close))
-            }
         }
-    )
+    }
 }
 
-data class ExportMenuItem(
-    val format: ExportFormat,
-    val label: String,
-    val desc: String
-)
+/**
+ * Kartu catatan untuk tampilan GRID (vertikal).
+ * 1. Bar warna atas (6dp, ikut terpotong sudut Card)
+ * 2. Judul max 2 baris
+ * 3. Pratinjau max 3 baris (weight 1f, fill=false)
+ * 4. Spacer mendorong bagian bawah ke tepi bawah
+ * 5. Tanggal + baris ikon (tinggi tetap, selalu tampil)
+ * Tint seleksi di atas Card. Semua teks pakai onSurface/onSurfaceVariant kontras.
+ */
+@Composable
+fun NoteCardGrid(
+    note: NoteEntity,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSelection: () -> Unit,
+    onDelete: () -> Unit,
+    onPinToggle: () -> Unit,
+    onExport: (() -> Unit)? = null
+) {
+    val displayTitle = remember(note.title, note.content) {
+        if (note.title.isNotBlank()) note.title
+        else note.content.takeWhile { it != '\n' }.take(50).trim()
+            .ifBlank { "Catatan tanpa judul" }
+    }
 
-// Bintang aktif (note di-pin): kuning terisi, konsisten di tema terang maupun gelap
-private val PinActiveYellow = Color(0xFFFFD600)
+    val previewText = remember(note.title, note.content) {
+        if (note.title.isNotBlank()) note.content
+        else ""
+    }.trim()
+
+    val relativeDate = remember(note.updatedAt) {
+        formatRelativeDate(note.updatedAt)
+    }
+
+    val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Bagian atas: bar warna + judul + pratinjau (mengisi ruang atas)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(accentColor)
+            )
+
+            // 2. Judul max 2 baris
+            Text(
+                text = displayTitle,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // 3. Pratinjau max 3 baris (weight 1f agar tidak mengisi ruang bawah)
+            if (previewText.isNotBlank()) {
+                Text(
+                    text = previewText,
+                    fontSize = 13.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Bagian bawah: tanggal kiri + ikon kanan (selalu menempel di dasar kartu)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = relativeDate,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (!isSelectionMode) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onPinToggle) {
+                        Icon(
+                            imageVector = if (note.isPinned) Icons.Filled.Star else StarOutlineIcon,
+                            contentDescription = if (note.isPinned) "Batal pin" else "Pin",
+                            tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onExport ?: {}) {
+                        Icon(Icons.Filled.Share, contentDescription = "Ekspor", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Hapus", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+}
 
 /**
  * Modifier gestur yang dipakai bersama oleh kartu daftar dan kartu grid.
@@ -775,348 +1034,6 @@ fun Modifier.noteCardGesturesModifier(
     })
 }
 
-@Composable
-fun NoteItem(
-    note: NoteEntity,
-    isSelected: Boolean,
-    isSelectionMode: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onToggleSelection: () -> Unit,
-    onDelete: () -> Unit,
-    onPinToggle: () -> Unit,
-    onExport: (() -> Unit)? = null
-) {
-    val displayTitle = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.title
-        else note.content.takeWhile { it != '\n' }.take(50).trim()
-            .ifBlank { "Catatan tanpa judul" }
-    }
-
-    val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content
-        else ""
-    }.trim()
-
-    val relativeDate = remember(note.updatedAt) {
-        formatRelativeDate(note.updatedAt)
-    }
-
-    val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
-
-    NoteCardSurface(
-        modifier = Modifier.fillMaxWidth(),
-        isSelected = isSelected,
-        isSelectionMode = isSelectionMode,
-        onClick = onClick,
-        onLongClick = onLongClick,
-        onToggleSelection = onToggleSelection
-    ) {
-        // Content Row dengan drawBehind untuk bar warna vertikal kiri.
-        // drawBehind SEBELUM padding supaya koordinat relatif ke tepi kartu penuh.
-        // Padding konten: start=28dp (12 inset + 4 bar + 12 gap), vertikal 12dp.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .drawBehind {
-                    // Koordinat relatif tepi kartu penuh (sebelum padding konten)
-                    val insetPx = 12.dp.toPx()
-                    val barWidthPx = 4.dp.toPx()
-                    val height = size.height
-                    val barHeight = (height - 2 * insetPx).coerceAtLeast(0f)
-                    drawRoundRect(
-                        color = accentColor,
-                        topLeft = Offset(insetPx, insetPx),
-                        size = Size(barWidthPx, barHeight),
-                        cornerRadius = CornerRadius(barWidthPx / 2f)
-                    )
-                }
-                .padding(start = 28.dp, top = 12.dp, end = 12.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-                // Content area (title + preview)
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                // Title
-                Text(
-                    text = displayTitle,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // Preview (only show if there's content beyond title)
-                if (previewText.isNotBlank()) {
-                    Text(
-                        text = previewText,
-                        fontSize = 13.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Right side: date + actions (disembunyikan selama mode seleksi)
-            if (!isSelectionMode) {
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = relativeDate,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = onPinToggle,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = if (note.isPinned) "Unpin" else "Pin",
-                                modifier = Modifier.size(20.dp),
-                                tint = if (note.isPinned) PinActiveYellow
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        onExport?.let {
-                            IconButton(
-                                onClick = it,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = "Export",
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = onDelete,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Permukaan kartu seragam untuk grid & list: Card surfaceVariant, sudut 12dp,
- * elevation 0, padding 12dp. Tint seleksi di atas Card.
- * Dipakai oleh NoteCardGrid dan NoteItem agar gaya konsisten.
- */
-@Composable
-fun NoteCardSurface(
-    modifier: Modifier = Modifier,
-    isSelected: Boolean,
-    isSelectionMode: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onToggleSelection: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    val containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                RoundedCornerShape(12.dp)
-            )
-            .then(
-                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                else Modifier
-            )
-            .noteCardGesturesModifier(
-                isSelectionMode = isSelectionMode,
-                onClick = onClick,
-                onLongClick = onLongClick,
-                onToggleSelection = onToggleSelection
-            ),
-        contentAlignment = Alignment.TopStart
-    ) {
-        CompositionLocalProvider(LocalContentColor provides (if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)) {
-            content()
-        }
-    }
-}
-
-/**
- * Kartu note untuk tampilan grid. Card surfaceVariant, sudut 12dp.
- * Layout sederhana: Column padding 12dp, urutan:
- * 1. Bar warna note 6dp (ikut terpotong sudut)
- * 2. Judul max 2 baris
- * 3. Pratinjau max 3 baris
- * 4. Spacer(weight=1f) mendorong bagian bawah ke tepi bawah
- * 5. Tanggal + baris ikon (tinggi tetap, selalu tampil)
- * Tint seleksi di atas Card. Semua teks pakai onSurface/onSurfaceVariant kontras.
- */
-@Composable
-fun NoteCardGrid(
-    note: NoteEntity,
-    isSelected: Boolean,
-    isSelectionMode: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onToggleSelection: () -> Unit,
-    onDelete: () -> Unit,
-    onPinToggle: () -> Unit,
-    onExport: (() -> Unit)? = null
-) {
-    val displayTitle = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.title
-        else note.content.takeWhile { it != '\n' }.take(50).trim()
-            .ifBlank { "Catatan tanpa judul" }
-    }
-
-    val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content
-        else ""
-    }.trim()
-
-    val relativeDate = remember(note.updatedAt) {
-        formatRelativeDate(note.updatedAt)
-    }
-
-    val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
-
-    NoteCardSurface(
-        modifier = Modifier.height(200.dp),
-        isSelected = isSelected,
-        isSelectionMode = isSelectionMode,
-        onClick = onClick,
-        onLongClick = onLongClick,
-        onToggleSelection = onToggleSelection
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Bagian atas: bar warna + judul + pratinjau (mengisi ruang atas)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .background(accentColor)
-                )
-
-                // 2. Judul max 2 baris
-                Text(
-                    text = displayTitle,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                // 3. Pratinjau max 3 baris (weight 1f agar tidak mengisi ruang bawah)
-                if (previewText.isNotBlank()) {
-                    Text(
-                        text = previewText,
-                        fontSize = 13.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Bagian bawah: tanggal kiri + ikon kanan (selalu menempel di dasar kartu)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = relativeDate,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (!isSelectionMode) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = onPinToggle,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = if (note.isPinned) "Unpin" else "Pin",
-                                modifier = Modifier.size(20.dp),
-                                tint = if (note.isPinned) PinActiveYellow
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        onExport?.let {
-                            IconButton(
-                                onClick = it,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = "Export",
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = onDelete,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 private fun formatRelativeDate(timestamp: Long): String {
     val date = LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault())
     val now = LocalDateTime.now()
@@ -1125,3 +1042,60 @@ private fun formatRelativeDate(timestamp: Long): String {
     val pattern = if (date.year == now.year) "d MMM, HH:mm" else "d MMM yyyy, HH:mm"
     return date.format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))
 }
+
+@Composable
+private fun SingleNoteExportDialog(
+    note: NoteEntity,
+    onDismiss: () -> Unit,
+    onExport: (ExportFormat) -> Unit
+) {
+    val items = listOf(
+        ExportMenuItem(ExportFormat.TXT, "Text (.txt)", "Catatan sebagai teks biasa"),
+        ExportMenuItem(ExportFormat.JSON, "JSON (.json)", "Data lengkap termasuk metadata"),
+        ExportMenuItem(ExportFormat.MD, "Markdown (.md)", "Format Markdown dengan header")
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ekspor Catatan", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.selectableGroup()
+            ) {
+                items.forEach { item ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .clickable { onExport(item.format); onDismiss() }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = item.desc,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+data class ExportMenuItem(
+    val format: ExportFormat,
+    val label: String,
+    val desc: String
+)

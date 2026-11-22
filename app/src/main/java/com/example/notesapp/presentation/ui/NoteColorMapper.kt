@@ -68,8 +68,14 @@ object NoteColorMapper {
         return if (isSystemInDarkTheme()) pair.dark else pair.light
     }
 
-    /** Get accent color for specific theme (for dialog/preview). */
+    /** Get accent color for specific theme (for dialog/preview). Non-composable version. */
     fun getNoteAccentColor(noteColor: Int, isDark: Boolean): Color {
+        val pair = accentColors[noteColor] ?: accentColors[DEFAULT_NOTE_COLOR]!!
+        return if (isDark) pair.dark else pair.light
+    }
+
+    /** Non-composable version for use in non-composable contexts. */
+    fun getNoteAccentColorNonComposable(noteColor: Int, isDark: Boolean): Color {
         val pair = accentColors[noteColor] ?: accentColors[DEFAULT_NOTE_COLOR]!!
         return if (isDark) pair.dark else pair.light
     }

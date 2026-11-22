@@ -4,8 +4,11 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.view.View
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +28,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -62,8 +66,18 @@ import androidx.compose.ui.window.PopupProperties
 import com.example.notesapp.R
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.presentation.viewmodel.NoteViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 
 // Material "outlined palette" icon (official SVG path) built as a lightweight ImageVector,
 // so we don't have to pull the 30MB+ material-icons-extended artifact.
@@ -224,6 +238,203 @@ fun AddEditNoteScreen(
         lastSnapshotAt = System.currentTimeMillis()
     }
 
+    // ==================== AUTOSAVE LOGIC ====================
+    // Snapshot of the last successfully saved state for dirty checking
+    val savedSnapshot = remember { mutableStateOf<Triple<String, String, Int>?>(null) }
+    // Mutex to prevent concurrent saves
+    val saveMutex = remember { Mutex() }
+    // Job for debounced autosave
+    val debounceJob = remember { mutableStateOf<Job?>(null) }
+    // Flag to indicate if we're in the process of saving via lifecycle/back
+    val isLifecycleSave = remember { mutableStateOf(false) }
+    // Lifecycle owner for observing ON_STOP
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // Flag to track if currentNote was newly created in this session (for toast logic)
+    val noteWasNewlyCreated = remember { mutableStateOf(noteToEdit == null) }
+    // Nyala kalau ada insert/update berhasil sejak layar dibuka. Dipertahankan saat rotasi.
+    val hasSavedSinceOpen = rememberSaveable { mutableStateOf(false) }
+    // Dipakai buat bedakan alasan log: belum ada perubahan vs toast sudah pernah ditampilkan.
+    val toastWasShown = rememberSaveable { mutableStateOf(false) }
+
+    // Update savedSnapshot when note is successfully saved (insert or update)
+    fun updateSavedSnapshot(note: NoteEntity) {
+        savedSnapshot.value = Triple(note.title, note.content, note.color)
+    }
+
+    // Initialize savedSnapshot with current note if editing existing note
+    LaunchedEffect(noteToEdit) {
+        if (noteToEdit != null) {
+            savedSnapshot.value = Triple(noteToEdit.title, noteToEdit.content, noteToEdit.color)
+        } else {
+            savedSnapshot.value = null
+        }
+    }
+
+    // Dirty check: compare current state with last saved snapshot
+    fun isDirty(): Boolean {
+        val current = Triple(title, contentValue.text, selectedColor)
+        return savedSnapshot.value != current
+    }
+
+    // Log pemicu ditaruh di baris pertama, sebelum guard/return apa pun.
+    fun logTrigger(trigger: String) {
+        Log.d(
+            "Autosave",
+            "$trigger: title='$title', content='${contentValue.text}', " +
+                "id=${currentNote?.id ?: "null"}, dirty=${isDirty()}"
+        )
+    }
+
+    // Toast pakai applicationContext dari main thread, bukan context composable yang bisa dibuang.
+    suspend fun showSavedToast() {
+        withContext(Dispatchers.Main) {
+            Log.d("Autosave", "toast: menampilkan 'Tersimpan'")
+            Toast.makeText(activity.applicationContext, "Tersimpan", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Core save function with dirty check and mutex - returns true if anything was written
+    suspend fun performSave(): Boolean {
+        return saveMutex.withLock {
+            logTrigger("performSave")
+
+            // Don't save if nothing changed
+            if (!isDirty()) {
+                Log.d("Autosave", "performSave: not dirty, skipping")
+                return@withLock false
+            }
+
+            // Don't save empty new notes
+            if (currentNote == null && title.isBlank() && contentValue.text.isBlank()) {
+                Log.d("Autosave", "performSave: empty new note, skipping")
+                return@withLock false
+            }
+
+            isSaving = true
+            try {
+                if (currentNote == null) {
+                    // New note: insert and get ID via suspend function (awaits completion)
+                    val savedNote = viewModel.insertNoteAndReturn(title, contentValue.text, selectedColor)
+                    currentNote = savedNote
+                    noteWasNewlyCreated.value = true
+                    updateSavedSnapshot(savedNote)
+                    Log.d("Autosave", "performSave: new note inserted, id=${savedNote.id}")
+                } else {
+                    // Existing note: update
+                    val updatedNote = currentNote!!.copy(
+                        title = title,
+                        content = contentValue.text,
+                        color = selectedColor,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    viewModel.updateNote(updatedNote)
+                    currentNote = updatedNote
+                    updateSavedSnapshot(updatedNote)
+                    Log.d("Autosave", "performSave: existing note updated, id=${updatedNote.id}")
+                }
+                hasSavedSinceOpen.value = true
+                true
+            } catch (e: Exception) {
+                Log.e("Autosave", "performSave: error", e)
+                false
+            } finally {
+                isSaving = false
+            }
+        }
+    }
+
+    // Toast cuma dipicu saat keluar dari layar atau meninggalkan app.
+    // allowToast=false dipakai kalau ON_PAUSE/ON_STOP terjadi karena rotasi.
+    suspend fun reportSavedOnExit(trigger: String, allowToast: Boolean = true) {
+        val saved = performSave()
+        if (allowToast && (saved || hasSavedSinceOpen.value)) {
+            hasSavedSinceOpen.value = false
+            toastWasShown.value = true
+            showSavedToast()
+        } else {
+            val reason = when {
+                !allowToast -> "perubahan konfigurasi"
+                toastWasShown.value -> "toast sudah ditampilkan"
+                else -> "tidak ada perubahan sejak layar dibuka"
+            }
+            Log.d("Autosave", "$trigger: toast dilewati, $reason")
+        }
+    }
+
+    // Debounced autosave: triggers 1 second after last change
+    LaunchedEffect(title, contentValue.text, selectedColor) {
+        logTrigger("debounce effect")
+
+        // Cancel previous debounce job
+        debounceJob.value?.cancel()
+        // Don't autosave if we're in a lifecycle/back save
+        if (isLifecycleSave.value) return@LaunchedEffect
+
+        // Wait 1 second after last change
+        debounceJob.value = launch {
+            delay(1000)
+            logTrigger("debounce fire")
+            if (!isLifecycleSave.value) {
+                performSave()
+            }
+        }
+    }
+
+    // Lifecycle observer: ON_PAUSE buat toast (masih ke-gambar), ON_STOP cadangan save
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            logTrigger("lifecycle ${event.name}")
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                logTrigger("ON_PAUSE")
+                isLifecycleSave.value = true
+                // Use NonCancellable to ensure save completes even if composition is cancelled
+                scope.launch(NonCancellable) {
+                    logTrigger("ON_PAUSE save")
+                    reportSavedOnExit(
+                        "ON_PAUSE",
+                        allowToast = !activity.isChangingConfigurations
+                    )
+                    isLifecycleSave.value = false
+                }
+            }
+            if (event == Lifecycle.Event.ON_STOP) {
+                logTrigger("ON_STOP")
+                isLifecycleSave.value = true
+                // Use NonCancellable to ensure save completes even if composition is cancelled
+                scope.launch(NonCancellable) {
+                    logTrigger("ON_STOP save")
+                    reportSavedOnExit(
+                        "ON_STOP",
+                        allowToast = !activity.isChangingConfigurations
+                    )
+                    isLifecycleSave.value = false
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            logTrigger("onDispose")
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Save on back navigation (explicit back from edit screen)
+    fun saveAndExit() {
+        logTrigger("saveAndExit")
+        isLifecycleSave.value = true
+        scope.launch(NonCancellable) {
+            reportSavedOnExit("saveAndExit")
+            isLifecycleSave.value = false
+        }
+    }
+
+    // BackHandler memastikan tombol back sistem juga menyimpan sebelum keluar.
+    BackHandler {
+        logTrigger("BackHandler")
+        saveAndExit()
+        onBack()
+    }
+
     fun enterEditMode() {
         contentValue = contentValue.copy(selection = TextRange(contentValue.text.length))
         isEditing = true
@@ -237,27 +448,13 @@ fun AddEditNoteScreen(
     }
 
     fun saveNote() {
-        if (title.isBlank() && contentValue.text.isBlank()) return
-        if (isSaving) return
-        val note = currentNote
-        if (note == null) {
-            // Catatan baru: insert, dapatkan id yang dikembalikan, lalu beralih ke mode baca
-            // catatan yang sama (hindari duplikat di saat simpan berikutnya).
-            isSaving = true
-            isEditing = false
-            viewModel.addNoteAndReturn(title, contentValue.text, selectedColor) { saved ->
-                currentNote = saved
-                isSaving = false
+        scope.launch {
+            if (performSave()) {
+                Log.d("Autosave", "saveNote: toast ditampilkan (perilaku tombol centang)")
+                showSavedToast()
+            } else {
+                Log.d("Autosave", "saveNote: toast dilewati, tidak ada perubahan")
             }
-        } else {
-            viewModel.updateNote(
-                note.copy(
-                    title = title,
-                    content = contentValue.text,
-                    color = selectedColor
-                )
-            )
-            exitEditMode()
         }
     }
 
@@ -360,7 +557,11 @@ fun AddEditNoteScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        // Save on back navigation before exiting
+                        saveAndExit()
+                        onBack()
+                    }) {
                         Icon(
                             Icons.Default.ArrowBack,
                             contentDescription = "Back",

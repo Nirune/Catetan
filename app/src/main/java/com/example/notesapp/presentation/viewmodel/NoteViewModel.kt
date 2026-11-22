@@ -70,6 +70,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun getRepository(): NoteRepository = repository
+
     fun setThemeMode(mode: ThemeMode) {
         ThemePreferences.setThemeMode(mode)
         _themeMode.value = mode
@@ -93,6 +95,12 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             val id = repository.insertNote(note)
             onResult(note.copy(id = id))
         }
+    }
+
+    suspend fun insertNoteAndReturn(title: String, content: String, color: Int): NoteEntity {
+        val note = NoteEntity.create(title = title, content = content, color = color)
+        val id = repository.insertNote(note)
+        return note.copy(id = id)
     }
 
     fun updateNote(note: NoteEntity) {
