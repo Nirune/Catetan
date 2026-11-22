@@ -2,6 +2,10 @@
 
 Aplikasi catatan Android yang simpel dan lokal. Tanpa login, tanpa akun, tanpa cloud. Semua data tersimpan langsung di HP.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Nirune/Catetan/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Catetan icon" width="128" height="128">
+</p>
+
 ## Fitur
 
 - **Catatan:** buat, lihat, edit, dan hapus catatan
