@@ -145,3 +145,13 @@ fun AppTheme(
         content = content
     )
 }
+
+/**
+ * Mengembalikan label mode (Sistem / Terang / Gelap) yang digunakan secara konsisten di layar
+ * Tampilan dan subjudul baris "Tema & Mode" di dialog Pengaturan.
+ */
+fun themeModeLabel(mode: ThemeMode): String = when (mode) {
+    ThemeMode.AUTO -> "Sistem"
+    ThemeMode.LIGHT -> "Terang"
+    ThemeMode.DARK -> "Gelap"
+}

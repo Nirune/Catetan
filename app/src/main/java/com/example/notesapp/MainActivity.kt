@@ -145,6 +145,8 @@ fun NotesAppNavigation(
     var exitSelectionClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     var deleteSelectedClick by remember { mutableStateOf<(() -> Unit)?>(null) }
 
+    val themeName by noteViewModel.themeName.collectAsState()
+
     // Bottom bar visibility - only show on main 3 tabs
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val showBottomBar = remember(currentBackStackEntry) {
@@ -199,7 +201,7 @@ fun NotesAppNavigation(
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+                    containerColor = MaterialTheme.colorScheme.surface
                 ) {
                     val items = listOf(
                         NavigationBarItem(
@@ -297,6 +299,7 @@ fun NotesAppNavigation(
                     },
                     onThemeModeChanged = onThemeModeChanged,
                     onAppearanceClick = { navController.navigate("appearance") },
+                    themeName = themeName,
                     onPickFile = onPickFile,
                     onPickFolder = onPickFolder
                 )

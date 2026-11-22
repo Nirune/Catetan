@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.sp
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.presentation.ui.ThemeMode
 import com.example.notesapp.presentation.ui.ThemePreferences
+import com.example.notesapp.presentation.ui.themeModeLabel
+import com.example.notesapp.presentation.ui.themePalette
 import com.example.notesapp.presentation.ui.ViewMode
 import com.example.notesapp.presentation.ui.isEffectiveDarkTheme
 import com.example.notesapp.presentation.viewmodel.ExportFormat
@@ -142,10 +144,12 @@ fun NoteListScreen(
     onTopBarCallbacks: ((NoteListTopBarCallbacks) -> Unit)? = null,
     onThemeModeChanged: (ThemeMode) -> Unit = {},
     onAppearanceClick: () -> Unit,
+    themeName: String,
     onPickFile: () -> Unit = {},
     onPickFolder: () -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
+    val themeName by viewModel.themeName.collectAsState()
     var showSingleExportDialog by remember { mutableStateOf(false) }
     var noteToExport by remember { mutableStateOf<NoteEntity?>(null) }
     var noteToDeleteId by rememberSaveable { mutableStateOf(-1L) }
@@ -325,23 +329,21 @@ fun NoteListScreen(
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 56.dp)
                             .clickable(onClick = {
                                 showThemeDialog = false
                                 onPickFolder()
                             })
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 16.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = stringResource(R.string.export_path_pick),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 2.dp)
                         )
-                        Spacer(modifier = Modifier.weight(1f))
                         Text(
                             text = stringResource(
                                 R.string.export_path_current,
@@ -399,75 +401,44 @@ fun NoteListScreen(
                         modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
                     )
 
-                    // Baris Tampilan membuka layar Mode + Tema
-                    Row(
+                    // Baris Tema & Mode membuka layar Tampilan
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 56.dp)
                             .clickable(onClick = {
-                                showThemeDialog = false
                                 onAppearanceClick()
+                                showThemeDialog = false
                             })
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Tema & Mode",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
                         Text(
-                            text = "Tampilan",
+                            text = "›",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        }
+                        Text(
+                            text = "${themePalette(themeName).name} · ${themeModeLabel(themeMode)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
                     Divider(
                         modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
                     )
-
-                    // Tema section
-                    Text(
-                        text = stringResource(R.string.theme),
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    Column(
-                        modifier = Modifier.selectableGroup()
-                    ) {
-                        val options = listOf(
-                            Pair(stringResource(R.string.theme_auto), ThemeMode.AUTO),
-                            Pair(stringResource(R.string.theme_light), ThemeMode.LIGHT),
-                            Pair(stringResource(R.string.theme_dark), ThemeMode.DARK)
-                        )
-                        options.forEach { (label, mode) ->
-                            val isSelected = themeMode == mode
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .selectable(
-                                        selected = isSelected,
-                                        enabled = true,
-                                        onClick = {
-                                            onThemeModeChanged(mode)
-                                            showThemeDialog = false
-                                        }
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = null,
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = MaterialTheme.colorScheme.primary,
-                                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(text = label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                            }
-                        }
-                    }
                 }
             },
             confirmButton = {
