@@ -11,7 +11,8 @@ Aplikasi catatan Android yang simpel dan lokal. Tanpa login, tanpa akun, tanpa c
 - **Catatan:** buat, lihat, edit, dan hapus catatan
 - **Kertas bergaris:** double-tap untuk masuk ke mode edit
 - **Warna catatan:** label warna dapat diatur per catatan
-- **Tema:** terang / gelap / ikuti sistem
+- **Tema:** terang / gelap / ikuti sistem, plus 8 tema warna (Catetan, Catppuccin, Tokyo Night, Rosé Pine, Gruvbox, Kanagawa, One Dark, Ayu) di layar Tampilan
+- **Mode tampilan:** Sistem / Terang / Gelap, berlaku ke seluruh layar
 - **Undo / redo:** kembali ke isi catatan sebelumnya
 - **Ekspor:** semua catatan ke `.ctn` (JSON Catetan), atau satu catatan ke TXT / JSON / Markdown
 - **Impor:** catatan dari file `.ctn` / `.txt` / `.json` / `.md`
@@ -35,7 +36,7 @@ Aplikasi catatan Android yang simpel dan lokal. Tanpa login, tanpa akun, tanpa c
 
 ## Unduh
 
-Rilis terbaru: [Catetan v1.0.7](https://github.com/Nirune/Catetan/releases/latest). Versi sebelumnya ada di [halaman rilis](https://github.com/Nirune/Catetan/releases).
+Rilis terbaru: [Catetan v1.0.8](https://github.com/Nirune/Catetan/releases/latest). Versi sebelumnya ada di [halaman rilis](https://github.com/Nirune/Catetan/releases).
 
 ## Build
 
