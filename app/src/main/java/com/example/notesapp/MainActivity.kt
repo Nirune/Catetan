@@ -53,6 +53,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.domain.repository.NoteRepository
 import com.example.notesapp.presentation.ui.AddEditNoteScreen
+import com.example.notesapp.presentation.ui.AppearanceScreen
 import com.example.notesapp.presentation.ui.AppTheme
 import com.example.notesapp.presentation.ui.NoteListScreen
 import com.example.notesapp.presentation.ui.NoteListTopBarCallbacks
@@ -97,7 +98,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val themeMode by noteViewModel.themeMode.collectAsState()
-            AppTheme(themeMode = themeMode) {
+            val themeName by noteViewModel.themeName.collectAsState()
+            AppTheme(themeMode = themeMode, themeName = themeName) {
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
@@ -294,6 +296,7 @@ fun NotesAppNavigation(
                         deleteSelectedClick = callbacks.onDeleteSelected
                     },
                     onThemeModeChanged = onThemeModeChanged,
+                    onAppearanceClick = { navController.navigate("appearance") },
                     onPickFile = onPickFile,
                     onPickFolder = onPickFolder
                 )
@@ -321,6 +324,14 @@ fun NotesAppNavigation(
                 AddEditNoteScreen(
                     viewModel = noteViewModel,
                     noteToEdit = editingNote,
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+            composable("appearance") {
+                AppearanceScreen(
+                    viewModel = noteViewModel,
                     onBack = {
                         navController.popBackStack()
                     }

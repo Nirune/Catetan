@@ -14,7 +14,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -194,7 +193,7 @@ fun AddEditNoteScreen(
     var colorButtonTopPx by remember { mutableStateOf(0f) }
 
     val activity = LocalContext.current as ComponentActivity
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = isEffectiveDarkTheme(viewModel.themeMode.collectAsState().value)
     val density = LocalDensity.current
     val focusRequester = remember { FocusRequester() }
     val titleFocusRequester = remember { FocusRequester() }
@@ -467,7 +466,7 @@ fun AddEditNoteScreen(
     }
 
     // Read-mode link styling: one AnnotatedString with blue underlined URLs.
-    val linkColor = if (isDarkTheme) Color(0xFF64B5F6) else Color(0xFF1565C0)
+    val linkColor = MaterialTheme.colorScheme.primary
     val linkifiedContent = remember(contentValue.text, linkColor) {
         linkifyContent(contentValue.text, linkColor)
     }
@@ -540,7 +539,7 @@ fun AddEditNoteScreen(
                             enabled = true,
                             placeholder = "Judul",
                             textColor = topBarContentColor,
-                            surfaceColor = if (isSystemInDarkTheme()) Color.White else MaterialTheme.colorScheme.surface,
+                            surfaceColor = if (isDarkTheme) Color.White else MaterialTheme.colorScheme.surface,
                             focusRequester = titleFocusRequester,
                         )
                     } else {

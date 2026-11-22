@@ -141,6 +141,7 @@ fun NoteListScreen(
     onAddClick: () -> Unit = {},
     onTopBarCallbacks: ((NoteListTopBarCallbacks) -> Unit)? = null,
     onThemeModeChanged: (ThemeMode) -> Unit = {},
+    onAppearanceClick: () -> Unit,
     onPickFile: () -> Unit = {},
     onPickFolder: () -> Unit = {}
 ) {
@@ -391,6 +392,29 @@ fun NoteListScreen(
                                     if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
                                 )
                             }
+                        )
+                    }
+
+                    Divider(
+                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
+                    )
+
+                    // Baris Tampilan membuka layar Mode + Tema
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable(onClick = {
+                                showThemeDialog = false
+                                onAppearanceClick()
+                            })
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Tampilan",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 

@@ -57,6 +57,9 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     private val _themeMode = MutableStateFlow(ThemePreferences.themeMode)
     val themeMode: StateFlow<ThemeMode> = _themeMode
 
+    private val _themeName = MutableStateFlow(ThemePreferences.themeName)
+    val themeName: StateFlow<String> = _themeName
+
     private val _viewMode = MutableStateFlow(ThemePreferences.viewMode)
     val viewMode: StateFlow<ViewMode> = _viewMode
 
@@ -75,6 +78,11 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: ThemeMode) {
         ThemePreferences.setThemeMode(mode)
         _themeMode.value = mode
+    }
+
+    fun setThemeName(name: String) {
+        ThemePreferences.setThemeName(name)
+        _themeName.value = ThemePreferences.themeName
     }
 
     fun setViewMode(mode: ViewMode) {
