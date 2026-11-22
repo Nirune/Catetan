@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,11 +58,19 @@ fun SearchScreen(
     val isSearching by searchViewModel.isSearching.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
-    // Show keyboard automatically when screen opens - defer until TextField is ready
-    LaunchedEffect(searchQuery) {
-        keyboardController?.show()
-        focusRequester.requestFocus()
+    fun dismissKeyboard() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
+
+    // Lepas fokus saat tab Search ditinggalkan supaya keyboard nggak ikut ke tab lain.
+    DisposableEffect(Unit) {
+        onDispose {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
     }
 
     Column(
@@ -76,6 +85,7 @@ fun SearchScreen(
             },
             onSubmit = { query ->
                 searchViewModel.onSearchSubmit(query)
+                dismissKeyboard()
             },
             focusRequester = focusRequester,
             onClear = {
@@ -87,7 +97,8 @@ fun SearchScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
+                .padding(top = 16.dp)
         ) {
             // History when query is empty
             if (searchQuery.trim().isEmpty() && searchHistory.isNotEmpty()) {
@@ -96,9 +107,13 @@ fun SearchScreen(
                     onHistoryClick = { query ->
                         searchViewModel.searchQuery.value = query
                         searchViewModel.onSearchSubmit(query)
+                        dismissKeyboard()
                     },
                     onHistoryDelete = { query ->
                         searchViewModel.removeFromHistory(query)
+                    },
+                    onClearAll = {
+                        searchViewModel.clearHistory()
                     }
                 )
             }
@@ -200,7 +215,8 @@ private fun SearchField(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp)
+            .padding(top = 12.dp)
             .height(56.dp)
             .focusRequester(focusRequester),
         placeholder = { Text("Cari") },
@@ -208,7 +224,8 @@ private fun SearchField(
             Icon(
                 imageVector = Icons.Filled.Search,
                 contentDescription = "Cari",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
             )
         },
         trailingIcon = {
@@ -217,7 +234,8 @@ private fun SearchField(
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "Hapus pencarian",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -229,8 +247,13 @@ private fun SearchField(
         keyboardActions = KeyboardActions(onSearch = { onSubmit(text) }),
         singleLine = true,
         maxLines = 1,
+        shape = RoundedCornerShape(28.dp),
         colors = TextFieldDefaults.textFieldColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+            errorIndicatorColor = Color.Transparent
         )
     )
 }
@@ -239,25 +262,24 @@ private fun SearchField(
 private fun SearchHistoryList(
     history: List<String>,
     onHistoryClick: (String) -> Unit,
-    onHistoryDelete: (String) -> Unit
+    onHistoryDelete: (String) -> Unit,
+    onClearAll: () -> Unit
 ) {
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 4.dp)
+                .padding(top = 4.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "Riwayat Pencarian",
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.primary
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            TextButton(onClick = {
-                // This would need a callback to clear all history
-                // For now, just show a snackbar that it's not implemented
-            }) {
+            TextButton(onClick = onClearAll) {
                 Text("Hapus Semua", color = MaterialTheme.colorScheme.error)
             }
         }
@@ -286,36 +308,41 @@ private fun HistoryItem(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .padding(horizontal = 16.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
             .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
+            modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Filled.History,
                 contentDescription = "Riwayat",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(24.dp).padding(end = 12.dp)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
             )
+            Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = query,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).fillMaxWidth()
+                modifier = Modifier.weight(1f)
             )
         }
-        IconButton(onClick = onDelete) {
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(48.dp)
+        ) {
             Icon(
                 imageVector = Icons.Filled.Close,
                 contentDescription = "Hapus dari riwayat",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -328,6 +355,7 @@ private fun SearchResultsList(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(results) { note ->
@@ -354,10 +382,9 @@ private fun SearchResultItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp)
             .background(
                 if (note.isPinned) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
-                else MaterialTheme.colorScheme.surfaceVariant,
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 RoundedCornerShape(12.dp)
             )
             .padding(12.dp),

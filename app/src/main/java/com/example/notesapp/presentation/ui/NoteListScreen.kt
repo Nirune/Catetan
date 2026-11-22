@@ -119,6 +119,15 @@ val StarOutlineIcon: ImageVector = ImageVector.Builder(
     fill = SolidColor(Color.Black)
 ).build()
 
+data class NoteListTopBarCallbacks(
+    val onExport: () -> Unit,
+    val onSettings: () -> Unit,
+    val onImport: () -> Unit,
+    val onSelectAll: () -> Unit,
+    val onExitSelection: () -> Unit,
+    val onDeleteSelected: () -> Unit
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
@@ -130,7 +139,7 @@ fun NoteListScreen(
     onSelectionChange: (List<Long>) -> Unit,
     onNoteClick: (NoteEntity) -> Unit = {},
     onAddClick: () -> Unit = {},
-    onTopBarCallbacks: ((() -> Unit, () -> Unit, () -> Unit) -> Unit)? = null,
+    onTopBarCallbacks: ((NoteListTopBarCallbacks) -> Unit)? = null,
     onThemeModeChanged: (ThemeMode) -> Unit = {},
     onPickFile: () -> Unit = {},
     onPickFolder: () -> Unit = {}
@@ -138,8 +147,10 @@ fun NoteListScreen(
     val notes by viewModel.allNotes.collectAsState()
     var showSingleExportDialog by remember { mutableStateOf(false) }
     var noteToExport by remember { mutableStateOf<NoteEntity?>(null) }
-    var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
-    var notesToDelete by remember { mutableStateOf<List<NoteEntity>>(emptyList()) }
+    var noteToDeleteId by rememberSaveable { mutableStateOf(-1L) }
+    val noteToDelete = notes.firstOrNull { it.id == noteToDeleteId }
+    var notesToDeleteIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    val notesToDelete = notes.filter { notesToDeleteIds.contains(it.id) }
     val exportResult by viewModel.exportResult.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -151,13 +162,7 @@ fun NoteListScreen(
     var exportFilename by remember { mutableStateOf("") }
     var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
     var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
-    var showDeleteConfirmation by remember { mutableStateOf(false) }
-
-    // Provide top bar callbacks to parent (MainActivity) for NotesTopBar
-    val onExportClick = { showFilenameDialog = true }
-    val onSettingsClick = { showThemeDialog = true }
-    val onImportClick = onPickFile
-    onTopBarCallbacks?.let { it(onExportClick, onSettingsClick, onImportClick) }
+    var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
 
     fun isNoteSelected(note: NoteEntity): Boolean = selectedNoteIds.contains(note.id)
 
@@ -183,7 +188,8 @@ fun NoteListScreen(
     fun exitSelectionMode() {
         onSelectionModeChange(false)
         onSelectionChange(emptyList())
-        notesToDelete = emptyList()
+        notesToDeleteIds = emptyList()
+        showDeleteConfirmation = false
     }
 
     fun toggleSelectAll() {
@@ -196,6 +202,29 @@ fun NoteListScreen(
         }
     }
 
+    // Provide top bar callbacks to parent (MainActivity) for NotesTopBar.
+    // Didefinisikan setelah helper seleksi supaya bisa manggil fungsi lokal itu.
+    fun provideTopBarCallbacks() {
+        onTopBarCallbacks?.let {
+            it(
+                NoteListTopBarCallbacks(
+                    onExport = { showFilenameDialog = true },
+                    onSettings = { showThemeDialog = true },
+                    onImport = onPickFile,
+                    onSelectAll = { toggleSelectAll() },
+                    onExitSelection = { exitSelectionMode() },
+                    onDeleteSelected = {
+                        notesToDeleteIds = notes
+                            .filter { selectedNoteIds.contains(it.id) }
+                            .map { it.id }
+                        showDeleteConfirmation = true
+                    }
+                )
+            )
+        }
+    }
+    provideTopBarCallbacks()
+
     // Bersihkan id seleksi yang sudah tidak ada di daftar (contoh: setelah hapus)
     LaunchedEffect(notes) {
         val validIds = notes.map { it.id }.toSet()
@@ -206,7 +235,10 @@ fun NoteListScreen(
         if (newSelection.isEmpty() && isSelectionMode) {
             exitSelectionMode()
         }
-        notesToDelete = notesToDelete.filter { validIds.contains(it.id) }
+        notesToDeleteIds = notesToDeleteIds.filter { validIds.contains(it) }
+        if (notesToDeleteIds.isEmpty()) {
+            showDeleteConfirmation = false
+        }
     }
 
     val themeMode by viewModel.themeMode.collectAsState()
@@ -486,7 +518,7 @@ fun NoteListScreen(
     // Delete confirmation dialog
     noteToDelete?.let { note ->
         AlertDialog(
-            onDismissRequest = { noteToDelete = null },
+            onDismissRequest = { noteToDeleteId = -1L },
             title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
@@ -498,14 +530,14 @@ fun NoteListScreen(
                 TextButton(
                     onClick = {
                         viewModel.deleteNote(note)
-                        noteToDelete = null
+                        noteToDeleteId = -1L
                     }
                 ) {
                     Text("Hapus", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { noteToDelete = null }) {
+                TextButton(onClick = { noteToDeleteId = -1L }) {
                     Text("Batal")
                 }
             }
@@ -528,8 +560,9 @@ fun NoteListScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val ids = notesToDelete.map { it.id }
+                        val ids = notesToDeleteIds
                         viewModel.deleteNotesByIds(ids)
+                        notesToDeleteIds = emptyList()
                         showDeleteConfirmation = false
                         exitSelectionMode()
                     }
@@ -589,7 +622,7 @@ fun NoteListScreen(
                     onNoteClick = onNoteClick,
                     onLongClick = { noteId -> enterSelectionMode(noteId) },
                     onToggleSelection = { noteId -> toggleSelection(noteId) },
-                    onDelete = { noteToDelete = it },
+                    onDelete = { note -> noteToDeleteId = note.id },
                     onPinToggle = { noteId -> viewModel.togglePin(noteId) },
                     onExport = { note ->
                         pendingNoteForExport = note
@@ -608,7 +641,7 @@ fun NoteListScreen(
                     onNoteClick = onNoteClick,
                     onLongClick = { noteId -> enterSelectionMode(noteId) },
                     onToggleSelection = { noteId -> toggleSelection(noteId) },
-                    onDelete = { noteToDelete = it },
+                    onDelete = { note -> noteToDeleteId = note.id },
                     onPinToggle = { noteId -> viewModel.togglePin(noteId) },
                     onExport = { note ->
                         pendingNoteForExport = note

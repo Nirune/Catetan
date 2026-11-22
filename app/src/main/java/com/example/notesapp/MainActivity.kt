@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -45,6 +46,7 @@ import com.example.notesapp.domain.repository.NoteRepository
 import com.example.notesapp.presentation.ui.AddEditNoteScreen
 import com.example.notesapp.presentation.ui.AppTheme
 import com.example.notesapp.presentation.ui.NoteListScreen
+import com.example.notesapp.presentation.ui.NoteListTopBarCallbacks
 import com.example.notesapp.presentation.ui.SearchScreen
 import com.example.notesapp.presentation.ui.TodoScreen
 import com.example.notesapp.presentation.ui.ThemeMode
@@ -121,12 +123,15 @@ fun NotesAppNavigation(
 ) {
     val navController = rememberNavController()
     var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
-    var isSelectionMode by remember { mutableStateOf(false) }
+    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedNoteIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     var showTodoAddDialog by remember { mutableStateOf(false) }
-    var exportClick by remember { mutableStateOf<() -> Unit>({}) }
-    var settingsClick by remember { mutableStateOf<() -> Unit>({}) }
-    var importClick by remember { mutableStateOf<() -> Unit>({}) }
+    var exportClick by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var settingsClick by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var importClick by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var selectAllClick by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var exitSelectionClick by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var deleteSelectedClick by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     // Bottom bar visibility - only show on main 3 tabs
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -144,20 +149,12 @@ fun NotesAppNavigation(
                     isSelectionMode = isSelectionMode,
                     selectedCount = selectedNoteIds.size,
                     totalCount = noteViewModel.allNotes.value.size,
-                    onExitSelection = { isSelectionMode = false; selectedNoteIds = emptyList() },
-                    onSelectAll = {
-                        val notes = noteViewModel.allNotes.value
-                        if (selectedNoteIds.size == notes.size && notes.isNotEmpty()) {
-                            selectedNoteIds = emptyList()
-                        } else {
-                            selectedNoteIds = notes.map { it.id }
-                            isSelectionMode = true
-                        }
-                    },
-                    onDeleteSelected = { /* NoteListScreen handles batch delete via callback */ },
-                    onExportClick = exportClick,
-                    onImportClick = importClick,
-                    onSettingsClick = settingsClick,
+                    onExitSelection = { exitSelectionClick?.invoke() },
+                    onSelectAll = { selectAllClick?.invoke() },
+                    onDeleteSelected = { deleteSelectedClick?.invoke() },
+                    onExportClick = { exportClick?.invoke() },
+                    onImportClick = { importClick?.invoke() },
+                    onSettingsClick = { settingsClick?.invoke() },
                     noteViewModel = noteViewModel
                 )
                 "todo" -> TodoTopBar()
@@ -247,10 +244,13 @@ fun NotesAppNavigation(
                         editingNote = null
                         navController.navigate("add_edit")
                     },
-                    onTopBarCallbacks = { export, settings, import_ ->
-                        exportClick = export
-                        settingsClick = settings
-                        importClick = import_
+                    onTopBarCallbacks = { callbacks: NoteListTopBarCallbacks ->
+                        exportClick = callbacks.onExport
+                        settingsClick = callbacks.onSettings
+                        importClick = callbacks.onImport
+                        selectAllClick = callbacks.onSelectAll
+                        exitSelectionClick = callbacks.onExitSelection
+                        deleteSelectedClick = callbacks.onDeleteSelected
                     },
                     onThemeModeChanged = onThemeModeChanged,
                     onPickFile = onPickFile,
@@ -387,9 +387,9 @@ fun TodoTopBar() {
 
 @Composable
 fun SearchTopBar() {
-    // Search screen has its own search field, so no top bar needed
+    // Search punya field sendiri; top bar cuma nyisihin inset status bar biar field nggak nempel jam.
     Box(modifier = Modifier
         .fillMaxWidth()
-        .height(0.dp)
+        .statusBarsPadding()
     )
 }
