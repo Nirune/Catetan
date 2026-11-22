@@ -11,7 +11,8 @@ data class TodoEntity(
     val isCompleted: Boolean = false,
     val createdAt: Long = Instant.now().toEpochMilli(),
     val updatedAt: Long = Instant.now().toEpochMilli(),
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val reminderAt: Long? = null
 ) {
     companion object {
         fun create(text: String, sortOrder: Int = 0): TodoEntity {

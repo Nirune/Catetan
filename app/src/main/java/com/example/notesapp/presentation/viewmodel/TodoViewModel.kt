@@ -3,15 +3,14 @@ package com.example.notesapp.presentation.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.example.notesapp.data.database.NotesDatabase
+import com.example.notesapp.data.model.TodoEntity
+import com.example.notesapp.domain.repository.TodoRepository
+import com.example.notesapp.reminder.ReminderScheduler
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.time.Instant
-import com.example.notesapp.data.database.NotesDatabase
-import com.example.notesapp.data.model.TodoEntity
-import com.example.notesapp.domain.repository.TodoRepository
 
 class TodoViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: TodoRepository
@@ -36,12 +35,15 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addTodoAndReturn(text: String, onResult: (TodoEntity) -> Unit) {
+    fun addTodoWithReminder(text: String, reminderAt: Long) {
         viewModelScope.launch {
             val sortOrder = repository.getNextSortOrder(false)
             val todo = TodoEntity.create(text = text, sortOrder = sortOrder)
             val id = repository.insertTodo(todo)
-            onResult(todo.copy(id = id))
+            if (id != -1L) {
+                repository.setReminderAt(id, reminderAt)
+                ReminderScheduler.schedule(getApplication(), id, reminderAt)
+            }
         }
     }
 
@@ -52,6 +54,10 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
                 updatedAt = System.currentTimeMillis()
             )
             repository.updateTodo(updated)
+            if (updated.isCompleted) {
+                ReminderScheduler.cancel(getApplication(), todo.id)
+                repository.clearReminderAt(todo.id)
+            }
         }
     }
 
@@ -63,13 +69,33 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteTodo(todo: TodoEntity) {
         viewModelScope.launch {
+            ReminderScheduler.cancel(getApplication(), todo.id)
             repository.deleteTodo(todo)
         }
     }
 
     fun deleteTodoById(id: Long) {
         viewModelScope.launch {
+            ReminderScheduler.cancel(getApplication(), id)
             repository.deleteTodoById(id)
+        }
+    }
+
+    fun setReminder(id: Long, reminderAt: Long?) {
+        viewModelScope.launch {
+            repository.setReminderAt(id, reminderAt)
+            if (reminderAt != null) {
+                ReminderScheduler.schedule(getApplication(), id, reminderAt)
+            } else {
+                ReminderScheduler.cancel(getApplication(), id)
+            }
+        }
+    }
+
+    fun clearReminder(id: Long) {
+        viewModelScope.launch {
+            repository.clearReminderAt(id)
+            ReminderScheduler.cancel(getApplication(), id)
         }
     }
 }

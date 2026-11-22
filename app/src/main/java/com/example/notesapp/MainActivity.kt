@@ -75,6 +75,10 @@ import androidx.compose.ui.unit.sp
 
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_OPEN_TAB = "extra_open_tab"
+    }
+
     private val noteViewModel: NoteViewModel by viewModels()
     private val todoViewModel: TodoViewModel by viewModels()
     private val searchViewModel: SearchViewModel by lazy {
@@ -96,6 +100,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ThemePreferences.init(this)
         enableEdgeToEdge()
+        val openTab = intent.getStringExtra(EXTRA_OPEN_TAB)
         setContent {
             val themeMode by noteViewModel.themeMode.collectAsState()
             val themeName by noteViewModel.themeName.collectAsState()
@@ -107,6 +112,7 @@ class MainActivity : ComponentActivity() {
                         noteViewModel = noteViewModel,
                         todoViewModel = todoViewModel,
                         searchViewModel = searchViewModel,
+                        openTab = openTab,
                         onThemeModeChanged = { newMode ->
                             noteViewModel.setThemeMode(newMode)
                         },
@@ -129,6 +135,7 @@ fun NotesAppNavigation(
     noteViewModel: NoteViewModel,
     todoViewModel: TodoViewModel,
     searchViewModel: SearchViewModel,
+    openTab: String?,
     onThemeModeChanged: (ThemeMode) -> Unit,
     onPickFile: () -> Unit,
     onPickFolder: () -> Unit
@@ -267,7 +274,7 @@ fun NotesAppNavigation(
     ) { innerPadding ->
         NavHost(
             navController,
-            startDestination = "notes",
+            startDestination = openTab ?: "notes",
             enterTransition = { fadeIn(animationSpec = tween(150)) },
             exitTransition = { fadeOut(animationSpec = tween(100)) },
             popEnterTransition = { fadeIn(animationSpec = tween(150)) },
