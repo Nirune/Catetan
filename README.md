@@ -18,10 +18,24 @@ Aplikasi catatan Android yang simpel dan lokal. Tanpa login, tanpa akun, tanpa c
 
 ## Teknologi
 
-- Kotlin
-- Jetpack Compose
-- Room (database lokal)
+- Kotlin 1.9.23
+- Jetpack Compose (Compose BOM 2023.10.00, compiler 1.5.11)
+- Room 2.6.1 (database lokal)
 - Material 3
+- Android Gradle Plugin 8.4.0, Gradle 8.6
+
+## Persyaratan & Kompatibilitas
+
+- **Android minimal:** 7.0 Nougat (API 24, `minSdk = 24`)
+- **Android target:** 14 (API 34, `targetSdk = 34`; `compileSdk = 34`)
+- **Arsitektur:** APK universal, tanpa `abiFilters` atau `splits`. Tidak ada native library (`.so`), jadi bisa jalan di perangkat ARM64, ARMv7, x86, dan x86_64 yang memenuhi API 24 ke atas.
+- **Izin:** tidak ada `<uses-permission>` di manifest, jadi tidak butuh izin runtime untuk pemakaian normal.
+- **Build:** JDK 17 (`jvmTarget = 17`) dan Android SDK platform 34.
+- **Bahasa antarmuka:** Indonesia.
+
+## Unduh
+
+Rilis terbaru: [Catetan v1.0.7](https://github.com/Nirune/Catetan/releases/latest). Versi sebelumnya ada di [halaman rilis](https://github.com/Nirune/Catetan/releases).
 
 ## Build
 
