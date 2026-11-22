@@ -1006,7 +1006,7 @@ fun NoteCardGrid(
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
 
     NoteCardSurface(
-        modifier = Modifier.heightIn(min = 120.dp),
+        modifier = Modifier.height(200.dp),
         isSelected = isSelected,
         isSelectionMode = isSelectionMode,
         onClick = onClick,
@@ -1015,44 +1015,49 @@ fun NoteCardGrid(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
-            Box(
+            // Bagian atas: bar warna + judul + pratinjau (mengisi ruang atas)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
-                    .background(accentColor)
-            )
-
-            // 2. Judul max 2 baris
-            Text(
-                text = displayTitle,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            // 3. Pratinjau max 3 baris
-            if (previewText.isNotBlank()) {
-                Text(
-                    text = previewText,
-                    fontSize = 13.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    .weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(accentColor)
                 )
+
+                // 2. Judul max 2 baris
+                Text(
+                    text = displayTitle,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                // 3. Pratinjau max 3 baris (weight 1f agar tidak mengisi ruang bawah)
+                if (previewText.isNotBlank()) {
+                    Text(
+                        text = previewText,
+                        fontSize = 13.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
-            // 4. Spacer mendorong bagian bawah ke tepi bawah kartu
-            Spacer(modifier = Modifier.weight(1f))
-
-            // 5. Bawah: tanggal kiri + ikon kanan (selalu tampil, tidak terdorong)
+            // Bagian bawah: tanggal kiri + ikon kanan (selalu menempel di dasar kartu)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
