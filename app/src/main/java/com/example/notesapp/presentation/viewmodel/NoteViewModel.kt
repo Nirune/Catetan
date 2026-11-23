@@ -2,11 +2,10 @@ package com.example.notesapp.presentation.viewmodel
 
 import android.app.Application
 import android.content.ContentResolver
-import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
-import android.os.Build
 import android.provider.MediaStore
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,12 +15,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import java.io.OutputStream
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -34,7 +33,7 @@ import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.ui.ViewMode
 
 sealed interface ExportResult {
-    data class Success(val fileName: String, val uri: Uri?) : ExportResult
+    data class Success(val fileName: String, val uri: String?) : ExportResult
     data class Error(val message: String) : ExportResult
 }
 
@@ -136,10 +135,6 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun exportNotes(format: ExportFormat) {
-        exportNotesInternal(listOf(), format, isSingle = false)
-    }
-
     /**
      * Membersihkan nama file: hapus karakter terlarang \ / : * ? " < > |,
      * ganti spasi/tab ganda jadi satu spasi, trim, hapus titik di akhir,
@@ -155,17 +150,12 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             .take(50)
     }
 
-    fun exportCtn(customFilename: String? = null) {
-        exportCtnInternal(customFilename)
+    fun exportSingleNote(note: NoteEntity, format: ExportFormat) {
+        exportNotesInternal(listOf(note), format, isSingle = true)
     }
 
-    fun exportSingleNote(note: NoteEntity, format: ExportFormat, customFilename: String? = null) {
-        val resolvedFilename = customFilename?.takeIf { it.isNotEmpty() } ?: sanitizeFileName(
-            note.title.takeIf { it.isNotEmpty() }
-                ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() }
-                ?: "catetan"
-        )
-        exportNotesInternal(listOf(note), format, isSingle = true, customFilename = resolvedFilename)
+    fun exportAllNotes(format: ExportFormat) {
+        exportNotesInternal(emptyList(), format, isSingle = false)
     }
 
     /**
@@ -219,7 +209,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 id = 0, // biarkan Room generate id baru
                 title = ctnNote.title,
                 content = ctnNote.content,
-                createdAt = ctnNote.createdAt,
+                createdAt = ctnNote.createdAt ?: ctnNote.updatedAt,
                 updatedAt = ctnNote.updatedAt,
                 isPinned = ctnNote.isPinned,
                 color = ctnNote.color
@@ -240,8 +230,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         val contentText = noteMap["content"]?.toString() ?: ""
         val isPinned = noteMap["isPinned"] as? Boolean ?: false
         val color = noteMap["color"]?.toString()?.toIntOrNull() ?: 0xFFFFFFFF.toInt()
-        val createdAt = noteMap["createdAt"]?.toString()?.toLong() ?: Instant.now().toEpochMilli()
         val updatedAt = noteMap["updatedAt"]?.toString()?.toLong() ?: Instant.now().toEpochMilli()
+        val createdAt = noteMap["createdAt"]?.toString()?.toLong() ?: updatedAt
 
         val note = NoteEntity(
             id = 0,
@@ -308,7 +298,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         return 1
     }
 
-    private fun exportNotesInternal(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean, customFilename: String? = null) {
+    private fun exportNotesInternal(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             exportResult.value = null
             try {
@@ -324,42 +314,24 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                     ExportFormat.MD -> exportToMarkdown(notesToExport)
                 }
 
-                val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
-                val defaultBaseName = if (isSingle && notes.isNotEmpty()) {
-                    sanitizeFileName(notes.first().title.takeIf { it.isNotEmpty() } ?: notes.first().content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
-                } else {
-                    "catetan"
-                }
-                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "${defaultBaseName}_$timestamp"
-                val fileName = "$baseName.${format.name.lowercase()}"
-                val uri = saveToCatetanFolder(content, fileName, format.mimeType)
-                exportResult.value = ExportResult.Success(fileName, uri)
+                val fileName = buildExportFileName(notesToExport, format, isSingle)
+                val destinationName = saveToCatetanFolder(content, fileName, format.mimeType)
+                exportResult.value = ExportResult.Success(fileName, destinationName)
             } catch (e: Exception) {
+                Log.e("Export", "Export failed format=$format single=$isSingle", e)
                 exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
             }
         }
     }
 
-    private fun exportCtnInternal(customFilename: String? = null) {
-        viewModelScope.launch(Dispatchers.IO) {
-            exportResult.value = null
-            try {
-                val notesToExport = repository.getAllNotesForExport()
-                if (notesToExport.isEmpty()) {
-                    exportResult.value = ExportResult.Error("Tidak ada catatan untuk diekspor")
-                    return@launch
-                }
-
-                val content = exportToCtn(notesToExport)
-                val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
-                val baseName = customFilename?.takeIf { it.isNotEmpty() } ?: "catetan_$timestamp"
-                val fileName = "$baseName.ctn"
-                val uri = saveToCatetanFolder(content, fileName, ctnMimeType)
-                exportResult.value = ExportResult.Success(fileName, uri)
-            } catch (e: Exception) {
-                exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
-            }
+    private fun buildExportFileName(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean): String {
+        val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").format(LocalDateTime.now())
+        val baseName = if (isSingle) {
+            sanitizeFileName(notes.first().title.ifBlank { "Catatan" }).ifBlank { "Catatan" }
+        } else {
+            "Catetan_semua"
         }
+        return "${baseName}_$timestamp.${format.name.lowercase()}"
     }
 
     private fun exportToTxt(notes: List<NoteEntity>): String {
@@ -418,67 +390,48 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         return sb.toString()
     }
 
-    private fun exportToCtn(notes: List<NoteEntity>): String {
-        val json = Json { prettyPrint = true }
-        val exportData = CtnExport(
-            app = "Catetan",
-            version = "1.0.0",
-            exportedAt = LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME),
-            notes = notes.map { note ->
-                CtnNote(
-                    id = note.id,
-                    title = note.title,
-                    content = note.content,
-                    createdAt = note.createdAt,
-                    updatedAt = note.updatedAt,
-                    isPinned = note.isPinned,
-                    color = note.color
-                )
-            }
-        )
-        return json.encodeToString(exportData)
-    }
-
-    private fun saveToCatetanFolder(content: String, fileName: String, mimeType: String): Uri {
+    private suspend fun saveToCatetanFolder(content: String, fileName: String, mimeType: String): String = withContext(Dispatchers.IO) {
         val context = getApplication<Application>()
         val resolver: ContentResolver = context.contentResolver
-
-        // Cek apakah ada path export custom yang disimpan
         val savedUriString = ThemePreferences.exportPathUri
-        if (savedUriString != null) {
-            val savedUri = Uri.parse(savedUriString)
-            val dirFile = DocumentFile.fromTreeUri(context, savedUri)
-            if (dirFile != null) {
-                val newFile = dirFile.createFile(mimeType, fileName)
-                if (newFile != null) {
-                    resolver.openOutputStream(newFile.uri)?.use { outputStream ->
-                        outputStream.write(content.toByteArray())
-                    }
-                    return newFile.uri
-                }
-            }
+            ?: throw IllegalStateException("Folder ekspor belum dipilih. Pilih folder di Pengaturan > Path Ekspor.")
+        val savedUri = Uri.parse(savedUriString)
+        val hasPersistedPermission = resolver.persistedUriPermissions.any {
+            it.uri == savedUri && it.isReadPermission && it.isWritePermission
         }
-
-        // Fallback ke Documents via MediaStore
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "Documents")
+        if (!hasPersistedPermission) {
+            throw SecurityException("Izin folder ekspor hilang. Pilih ulang folder di Pengaturan > Path Ekspor.")
         }
+        val directory = DocumentFile.fromTreeUri(context, savedUri)
+            ?: throw IllegalStateException("Folder ekspor tidak dapat dibuka. Pilih ulang folder.")
+        if (!directory.canWrite()) {
+            throw SecurityException("Folder ekspor tidak bisa ditulis. Pilih folder lain.")
+        }
+        val targetName = uniqueFileName(directory, fileName)
+        val file = directory.createFile(mimeType, targetName)
+            ?: throw IllegalStateException("Gagal membuat file di folder ekspor.")
+        try {
+            val output = resolver.openOutputStream(file.uri, "w")
+                ?: throw IllegalStateException("Gagal membuka file untuk ditulis.")
+            output.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
+        val folderName = directory.name?.takeIf { it.isNotBlank() } ?: "Folder ekspor"
+        "$folderName/$targetName"
+    }
 
-        val uri: Uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-            ?: throw IllegalStateException("Gagal membuat file")
-
-        resolver.openOutputStream(uri)?.use { outputStream ->
-            outputStream.write(content.toByteArray())
-        } ?: throw IllegalStateException("Gagal menulis file")
-
-        // Hapus flag pending agar file terlihat oleh sistem
-        contentValues.clear()
-        contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-        resolver.update(uri, contentValues, null, null)
-
-        return uri
+    private fun uniqueFileName(directory: DocumentFile, requestedName: String): String {
+        if (directory.findFile(requestedName) == null) return requestedName
+        val extension = requestedName.substringAfterLast('.', "")
+        val base = requestedName.substringBeforeLast('.', requestedName)
+        var index = 1
+        while (true) {
+            val candidate = "$base ($index).$extension"
+            if (directory.findFile(candidate) == null) return candidate
+            index++
+        }
     }
 
     val ExportFormat.mimeType: String
@@ -488,7 +441,6 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             ExportFormat.MD -> "text/markdown"
         }
 
-    val ctnMimeType: String = "application/x-catetan"
 }
 
 @Serializable
@@ -504,7 +456,7 @@ data class CtnNote(
     @SerialName("id") val id: Long,
     @SerialName("title") val title: String,
     @SerialName("content") val content: String,
-    @SerialName("createdAt") val createdAt: Long,
+    @SerialName("createdAt") val createdAt: Long? = null,
     @SerialName("updatedAt") val updatedAt: Long,
     @SerialName("isPinned") val isPinned: Boolean,
     @SerialName("color") val color: Int

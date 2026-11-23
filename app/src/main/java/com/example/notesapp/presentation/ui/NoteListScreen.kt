@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -15,7 +17,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -65,11 +66,6 @@ import com.example.notesapp.presentation.viewmodel.ImportResult
 import com.example.notesapp.presentation.viewmodel.NoteViewModel
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 // Material "done_all" icon (official SVG path) built as a lightweight ImageVector,
 // sama seperti PaletteIcon di AddEditNoteScreen. Tidak perlu material-icons-extended.
@@ -163,10 +159,7 @@ fun NoteListScreen(
 
     var showThemeDialog by remember { mutableStateOf(false) }
 
-    var showFilenameDialog by remember { mutableStateOf(false) }
-    var exportFilename by remember { mutableStateOf("") }
-    var pendingNoteForExport by remember { mutableStateOf<NoteEntity?>(null) }
-    var pendingFormatForExport by remember { mutableStateOf<ExportFormat?>(null) }
+    var showAllExportDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
 
     fun isNoteSelected(note: NoteEntity): Boolean = selectedNoteIds.contains(note.id)
@@ -213,7 +206,7 @@ fun NoteListScreen(
         onTopBarCallbacks?.let {
             it(
                 NoteListTopBarCallbacks(
-                    onExport = { showFilenameDialog = true },
+                    onExport = { showAllExportDialog = true },
                     onSettings = { showThemeDialog = true },
                     onImport = onPickFile,
                     onSelectAll = { toggleSelectAll() },
@@ -250,16 +243,6 @@ fun NoteListScreen(
     val viewMode by viewModel.viewMode.collectAsState()
     val isDark = isEffectiveDarkTheme(themeMode)
     val currentExportPath = ThemePreferences.exportPathUri
-
-    fun showSingleNoteExportDialog(note: NoteEntity) {
-        pendingNoteForExport = note
-        pendingFormatForExport = null
-        val baseName = viewModel.sanitizeFileName(note.title.takeIf { it.isNotEmpty() } ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
-        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
-        exportFilename = "${baseName}_$timestamp"
-        showFilenameDialog = true
-    }
-
     // Handle export result
     LaunchedEffect(exportResult) {
         exportResult?.let { result ->
@@ -267,17 +250,21 @@ fun NoteListScreen(
                 is ExportResult.Success -> {
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            message = "Berhasil ekspor: ${result.fileName}",
+                            message = "Diekspor ke ${result.uri ?: result.fileName}",
                             actionLabel = "OK"
                         )
                     }
                 }
                 is ExportResult.Error -> {
                     scope.launch {
-                        snackbarHostState.showSnackbar(
+                        val action = if (result.message.contains("folder ekspor", ignoreCase = true)) "Pilih folder" else "OK"
+                        val snackbar = snackbarHostState.showSnackbar(
                             message = result.message,
-                            actionLabel = "OK"
+                            actionLabel = action
                         )
+                        if (snackbar == SnackbarResult.ActionPerformed && action == "Pilih folder") {
+                            onPickFolder()
+                        }
                     }
                 }
             }
@@ -447,65 +434,28 @@ fun NoteListScreen(
         )
     }
 
-    // Filename dialog
-    if (showFilenameDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showFilenameDialog = false
-                pendingNoteForExport = null
-                pendingFormatForExport = null
-            },
-            title = { Text(stringResource(R.string.filename_title), fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = exportFilename,
-                    onValueChange = { exportFilename = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(stringResource(R.string.filename_hint)) },
-                    singleLine = true,
-                    maxLines = 1,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showFilenameDialog = false
-                    if (pendingNoteForExport != null) {
-                        noteToExport = pendingNoteForExport
-                        showSingleExportDialog = true
-                        pendingNoteForExport = null
-                    } else {
-                        viewModel.exportCtn(exportFilename)
-                    }
-                }) {
-                    Text(stringResource(R.string.save))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showFilenameDialog = false
-                    pendingNoteForExport = null
-                    pendingFormatForExport = null
-                }) {
-                    Text(stringResource(R.string.close))
-                }
-            }
-        )
-    }
-
-    // Single Note Export Dialog (format picker)
     if (showSingleExportDialog && noteToExport != null) {
         SingleNoteExportDialog(
             note = noteToExport!!,
             onDismiss = {
                 showSingleExportDialog = false
                 noteToExport = null
-                pendingFormatForExport = null
             },
             onExport = { format ->
-                viewModel.exportSingleNote(noteToExport!!, format, exportFilename)
+                viewModel.exportSingleNote(noteToExport!!, format)
                 showSingleExportDialog = false
                 noteToExport = null
-                pendingFormatForExport = null
+            }
+        )
+    }
+
+    if (showAllExportDialog) {
+        AllNotesExportDialog(
+            noteCount = notes.size,
+            onDismiss = { showAllExportDialog = false },
+            onExport = { format ->
+                viewModel.exportAllNotes(format)
+                showAllExportDialog = false
             }
         )
     }
@@ -620,12 +570,8 @@ fun NoteListScreen(
                     onDelete = { note -> noteToDeleteId = note.id },
                     onPinToggle = { noteId -> viewModel.togglePin(noteId) },
                     onExport = { note ->
-                        pendingNoteForExport = note
-                        pendingFormatForExport = null
-                        val baseName = viewModel.sanitizeFileName(note.title.takeIf { it.isNotEmpty() } ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
-                        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
-                        exportFilename = "${baseName}_$timestamp"
-                        showFilenameDialog = true
+                        noteToExport = note
+                        showSingleExportDialog = true
                     },
                     accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
                 )
@@ -639,12 +585,8 @@ fun NoteListScreen(
                     onDelete = { note -> noteToDeleteId = note.id },
                     onPinToggle = { noteId -> viewModel.togglePin(noteId) },
                     onExport = { note ->
-                        pendingNoteForExport = note
-                        pendingFormatForExport = null
-                        val baseName = viewModel.sanitizeFileName(note.title.takeIf { it.isNotEmpty() } ?: note.content.lines().firstOrNull()?.takeIf { it.isNotEmpty() } ?: "catetan")
-                        val timestamp = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm").format(LocalDateTime.now())
-                        exportFilename = "${baseName}_$timestamp"
-                        showFilenameDialog = true
+                        noteToExport = note
+                        showSingleExportDialog = true
                     },
                     accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
                 )
@@ -723,7 +665,7 @@ private fun NoteGridContent(
         items(notes) { note ->
             val isSelected = selectedNoteIds.contains(note.id)
             NoteCardSurface(
-                modifier = Modifier.height(200.dp),
+                modifier = Modifier.heightIn(min = 200.dp),
                 isSelected = isSelected,
                 isSelectionMode = isSelectionMode,
                 onClick = { onNoteClick(note) },
@@ -810,18 +752,20 @@ fun NoteItem(
 ) {
     val displayTitle = remember(note.title, note.content) {
         if (note.title.isNotBlank()) note.title
-        else note.content.takeWhile { it != '\n' }.take(50).trim()
+        else note.content.take(50).substringBefore('\n').trim()
             .ifBlank { "Catatan tanpa judul" }
     }
 
     val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content
+        if (note.title.isNotBlank()) note.content.take(240).trim()
         else ""
-    }.trim()
-
-    val relativeDate = remember(note.updatedAt) {
-        formatRelativeDate(note.updatedAt)
     }
+
+    val createdDate = remember(note.createdAt) {
+        formatNoteDate(note.createdAt)
+    }
+    val showUpdatedDate = note.updatedAt - note.createdAt > 60_000L
+    val updatedDate = remember(note.updatedAt) { formatNoteDate(note.updatedAt) }
 
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
 
@@ -874,17 +818,33 @@ fun NoteItem(
                 )
             }
 
-            // Tanggal + ikon
+            // Timestamps + icons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = relativeDate,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Dibuat $createdDate",
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (showUpdatedDate) {
+                        Text(
+                            text = "Diubah $updatedDate",
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
                 if (!isSelectionMode) {
                     Row(
@@ -934,18 +894,20 @@ fun NoteCardGrid(
 ) {
     val displayTitle = remember(note.title, note.content) {
         if (note.title.isNotBlank()) note.title
-        else note.content.takeWhile { it != '\n' }.take(50).trim()
+        else note.content.take(50).substringBefore('\n').trim()
             .ifBlank { "Catatan tanpa judul" }
     }
 
     val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content
+        if (note.title.isNotBlank()) note.content.take(240).trim()
         else ""
-    }.trim()
-
-    val relativeDate = remember(note.updatedAt) {
-        formatRelativeDate(note.updatedAt)
     }
+
+    val createdDate = remember(note.createdAt) {
+        formatNoteDate(note.createdAt)
+    }
+    val showUpdatedDate = note.updatedAt - note.createdAt > 60_000L
+    val updatedDate = remember(note.updatedAt) { formatNoteDate(note.updatedAt) }
 
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
 
@@ -953,13 +915,13 @@ fun NoteCardGrid(
         modifier = Modifier
             .fillMaxSize()
             .padding(12.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         // Bagian atas: bar warna + judul + pratinjau (mengisi ruang atas)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false),
+                .weight(1f, fill = true),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
@@ -993,17 +955,33 @@ fun NoteCardGrid(
             }
         }
 
-        // Bagian bawah: tanggal kiri + ikon kanan (selalu menempel di dasar kartu)
+        // Bottom timestamps and actions stay aligned along the card edge.
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = relativeDate,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Dibuat $createdDate",
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (showUpdatedDate) {
+                    Text(
+                        text = "Diubah $updatedDate",
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             if (!isSelectionMode) {
                 Row(
@@ -1062,67 +1040,93 @@ fun Modifier.noteCardGesturesModifier(
     })
 }
 
-private fun formatRelativeDate(timestamp: Long): String {
-    val date = LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault())
-    val now = LocalDateTime.now()
-
-    // Always show date + time. Add the year only when it differs from the current year.
-    val pattern = if (date.year == now.year) "d MMM, HH:mm" else "d MMM yyyy, HH:mm"
-    return date.format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))
-}
-
 @Composable
 private fun SingleNoteExportDialog(
     note: NoteEntity,
     onDismiss: () -> Unit,
     onExport: (ExportFormat) -> Unit
 ) {
-    val items = listOf(
-        ExportMenuItem(ExportFormat.TXT, "Text (.txt)", "Catatan sebagai teks biasa"),
-        ExportMenuItem(ExportFormat.JSON, "JSON (.json)", "Data lengkap termasuk metadata"),
-        ExportMenuItem(ExportFormat.MD, "Markdown (.md)", "Format Markdown dengan header")
+    ExportFormatDialog(
+        subtitle = note.title.ifBlank { note.content.lineSequence().firstOrNull().orEmpty() }
+            .ifBlank { "Catatan tanpa judul" },
+        onDismiss = onDismiss,
+        onExport = onExport
+    )
+}
+
+@Composable
+private fun AllNotesExportDialog(
+    noteCount: Int,
+    onDismiss: () -> Unit,
+    onExport: (ExportFormat) -> Unit
+) {
+    ExportFormatDialog(
+        subtitle = "Semua catatan ($noteCount)",
+        onDismiss = onDismiss,
+        onExport = onExport
+    )
+}
+
+@Composable
+private fun ExportFormatDialog(
+    subtitle: String,
+    onDismiss: () -> Unit,
+    onExport: (ExportFormat) -> Unit
+) {
+    val formats = listOf(
+        ExportMenuItem(ExportFormat.TXT, "Text (.txt)", "Ekspor catatan sebagai teks biasa yang mudah dibaca."),
+        ExportMenuItem(ExportFormat.JSON, "JSON (.json)", "Ekspor data catatan beserta metadata dalam format JSON."),
+        ExportMenuItem(ExportFormat.MD, "Markdown (.md)", "Ekspor catatan dengan judul dan isi dalam format Markdown.")
     )
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Ekspor Catatan", fontWeight = FontWeight.Bold) },
         text = {
-            Column(
-                modifier = Modifier.selectableGroup()
-            ) {
-                items.forEach { item ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .clickable { onExport(item.format); onDismiss() }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = item.label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = item.desc,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            Column(modifier = Modifier.heightIn(max = 440.dp)) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    formats.forEachIndexed { index, item ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .clickable(onClick = { onExport(item.format) })
+                                .padding(horizontal = 24.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = item.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = item.desc,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (index < formats.lastIndex) {
+                            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.close))
-            }
+            TextButton(onClick = onDismiss) { Text("Tutup") }
         }
     )
 }
 
-data class ExportMenuItem(
+private data class ExportMenuItem(
     val format: ExportFormat,
     val label: String,
     val desc: String

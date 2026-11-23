@@ -11,7 +11,7 @@ import com.example.notesapp.data.dao.TodoDao
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.data.model.TodoEntity
 
-@Database(entities = [NoteEntity::class, TodoEntity::class], version = 2, exportSchema = false)
+@Database(entities = [NoteEntity::class, TodoEntity::class], version = 3, exportSchema = false)
 abstract class NotesDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun todoDao(): TodoDao
@@ -22,7 +22,8 @@ abstract class NotesDatabase : RoomDatabase() {
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("""
+                database.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS todos (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         text TEXT NOT NULL,
@@ -31,7 +32,14 @@ abstract class NotesDatabase : RoomDatabase() {
                         updatedAt INTEGER NOT NULL,
                         sortOrder INTEGER NOT NULL DEFAULT 0
                     )
-                """.trimIndent())
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE todos ADD COLUMN reminderAt INTEGER DEFAULT NULL")
             }
         }
 
@@ -42,7 +50,7 @@ abstract class NotesDatabase : RoomDatabase() {
                     NotesDatabase::class.java,
                     "notes_database"
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 INSTANCE = instance
                 instance

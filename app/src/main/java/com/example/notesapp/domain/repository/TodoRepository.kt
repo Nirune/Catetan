@@ -3,11 +3,18 @@ package com.example.notesapp.domain.repository
 import com.example.notesapp.data.dao.TodoDao
 import com.example.notesapp.data.model.TodoEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 class TodoRepository(private val todoDao: TodoDao) {
     val allTodos: Flow<List<TodoEntity>> = todoDao.getAllTodos()
 
     fun getTodoById(id: Long): Flow<TodoEntity?> = todoDao.getTodoById(id)
+
+    suspend fun getPendingReminders(now: Long): List<TodoEntity> = todoDao.getPendingReminders(now)
+
+    suspend fun getTodoByIdImmediate(id: Long): TodoEntity? {
+        return todoDao.getTodoById(id).firstOrNull()
+    }
 
     suspend fun insertTodo(todo: TodoEntity): Long = todoDao.insertTodo(todo)
 
@@ -28,6 +35,16 @@ class TodoRepository(private val todoDao: TodoDao) {
     }
 
     suspend fun updateSortOrder(id: Long, sortOrder: Int) = todoDao.updateSortOrder(id, sortOrder)
+
+    suspend fun setReminderAt(id: Long, reminderAt: Long?) {
+        val updatedAt = System.currentTimeMillis()
+        todoDao.setReminderAt(id, reminderAt, updatedAt)
+    }
+
+    suspend fun clearReminderAt(id: Long) {
+        val updatedAt = System.currentTimeMillis()
+        todoDao.setReminderAt(id, null, updatedAt)
+    }
 
     suspend fun getNextSortOrder(isCompleted: Boolean): Int {
         val maxOrder = if (isCompleted) {

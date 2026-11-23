@@ -75,6 +75,10 @@ import androidx.compose.ui.unit.sp
 
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_OPEN_TAB = "extra_open_tab"
+    }
+
     private val noteViewModel: NoteViewModel by viewModels()
     private val todoViewModel: TodoViewModel by viewModels()
     private val searchViewModel: SearchViewModel by lazy {
@@ -89,13 +93,22 @@ class MainActivity : ComponentActivity() {
 
     // Folder picker launcher untuk ganti path export
     private val pickFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        uri?.let { ThemePreferences.setExportPathUri(it.toString()) }
+        uri?.let { selectedUri ->
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                contentResolver.takePersistableUriPermission(selectedUri, flags)
+                ThemePreferences.setExportPathUri(selectedUri.toString())
+            } catch (e: SecurityException) {
+                android.util.Log.e("Export", "Failed to persist folder permission uri=$selectedUri", e)
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ThemePreferences.init(this)
         enableEdgeToEdge()
+        val openTab = intent.getStringExtra(EXTRA_OPEN_TAB)
         setContent {
             val themeMode by noteViewModel.themeMode.collectAsState()
             val themeName by noteViewModel.themeName.collectAsState()
@@ -107,6 +120,7 @@ class MainActivity : ComponentActivity() {
                         noteViewModel = noteViewModel,
                         todoViewModel = todoViewModel,
                         searchViewModel = searchViewModel,
+                        openTab = openTab,
                         onThemeModeChanged = { newMode ->
                             noteViewModel.setThemeMode(newMode)
                         },
@@ -129,6 +143,7 @@ fun NotesAppNavigation(
     noteViewModel: NoteViewModel,
     todoViewModel: TodoViewModel,
     searchViewModel: SearchViewModel,
+    openTab: String?,
     onThemeModeChanged: (ThemeMode) -> Unit,
     onPickFile: () -> Unit,
     onPickFolder: () -> Unit
@@ -254,7 +269,7 @@ fun NotesAppNavigation(
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                 indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -267,7 +282,7 @@ fun NotesAppNavigation(
     ) { innerPadding ->
         NavHost(
             navController,
-            startDestination = "notes",
+            startDestination = openTab ?: "notes",
             enterTransition = { fadeIn(animationSpec = tween(150)) },
             exitTransition = { fadeOut(animationSpec = tween(100)) },
             popEnterTransition = { fadeIn(animationSpec = tween(150)) },

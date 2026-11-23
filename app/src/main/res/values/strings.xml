@@ -18,4 +18,16 @@
     <string name="export_path_default">Documents</string>
     <string name="view_mode">Tampilan</string>
     <string name="view_mode_grid">Tampilan grid</string>
+    <string name="todo_reminder_label">Pengingat</string>
+    <string name="todo_reminder_none">Tidak ada</string>
+    <string name="todo_reminder_pick_title">Atur pengingat</string>
+    <string name="todo_reminder_btn_set">Atur</string>
+    <string name="todo_reminder_btn_cancel">Batal</string>
+    <string name="todo_reminder_btn_remove">Hapus pengingat</string>
+    <string name="todo_reminder_notif_channel">Pengingat Todo</string>
+    <string name="todo_reminder_notif_title">Pengingat Todo</string>
+    <string name="todo_reminder_permission_denied">Pengingat tidak akan muncul sebelum izin notifikasi diberikan</string>
+    <string name="todo_reminder_exact_alarm_denied">Alarm tepat waktu belum diizinkan, pengingat bisa terlambat</string>
+    <string name="todo_reminder_exact_alarm_settings">Izinkan</string>
+    <string name="todo_reminder_notification_settings">Pengaturan</string>
 </resources>
