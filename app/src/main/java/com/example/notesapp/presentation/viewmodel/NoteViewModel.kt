@@ -219,7 +219,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 id = 0, // biarkan Room generate id baru
                 title = ctnNote.title,
                 content = ctnNote.content,
-                createdAt = ctnNote.createdAt,
+                createdAt = ctnNote.createdAt ?: ctnNote.updatedAt,
                 updatedAt = ctnNote.updatedAt,
                 isPinned = ctnNote.isPinned,
                 color = ctnNote.color
@@ -240,8 +240,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         val contentText = noteMap["content"]?.toString() ?: ""
         val isPinned = noteMap["isPinned"] as? Boolean ?: false
         val color = noteMap["color"]?.toString()?.toIntOrNull() ?: 0xFFFFFFFF.toInt()
-        val createdAt = noteMap["createdAt"]?.toString()?.toLong() ?: Instant.now().toEpochMilli()
         val updatedAt = noteMap["updatedAt"]?.toString()?.toLong() ?: Instant.now().toEpochMilli()
+        val createdAt = noteMap["createdAt"]?.toString()?.toLong() ?: updatedAt
 
         val note = NoteEntity(
             id = 0,
@@ -504,7 +504,7 @@ data class CtnNote(
     @SerialName("id") val id: Long,
     @SerialName("title") val title: String,
     @SerialName("content") val content: String,
-    @SerialName("createdAt") val createdAt: Long,
+    @SerialName("createdAt") val createdAt: Long? = null,
     @SerialName("updatedAt") val updatedAt: Long,
     @SerialName("isPinned") val isPinned: Boolean,
     @SerialName("color") val color: Int

@@ -723,7 +723,7 @@ private fun NoteGridContent(
         items(notes) { note ->
             val isSelected = selectedNoteIds.contains(note.id)
             NoteCardSurface(
-                modifier = Modifier.height(200.dp),
+                modifier = Modifier.heightIn(min = 200.dp),
                 isSelected = isSelected,
                 isSelectionMode = isSelectionMode,
                 onClick = { onNoteClick(note) },
@@ -810,18 +810,20 @@ fun NoteItem(
 ) {
     val displayTitle = remember(note.title, note.content) {
         if (note.title.isNotBlank()) note.title
-        else note.content.takeWhile { it != '\n' }.take(50).trim()
+        else note.content.take(50).substringBefore('\n').trim()
             .ifBlank { "Catatan tanpa judul" }
     }
 
     val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content
+        if (note.title.isNotBlank()) note.content.take(240).trim()
         else ""
-    }.trim()
-
-    val relativeDate = remember(note.updatedAt) {
-        formatRelativeDate(note.updatedAt)
     }
+
+    val createdDate = remember(note.createdAt) {
+        formatRelativeDate(note.createdAt)
+    }
+    val showUpdatedDate = note.updatedAt - note.createdAt > 60_000L
+    val updatedDate = remember(note.updatedAt) { formatRelativeDate(note.updatedAt) }
 
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
 
@@ -874,17 +876,33 @@ fun NoteItem(
                 )
             }
 
-            // Tanggal + ikon
+            // Timestamps + icons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = relativeDate,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Dibuat $createdDate",
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (showUpdatedDate) {
+                        Text(
+                            text = "Diubah $updatedDate",
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
                 if (!isSelectionMode) {
                     Row(
@@ -934,18 +952,20 @@ fun NoteCardGrid(
 ) {
     val displayTitle = remember(note.title, note.content) {
         if (note.title.isNotBlank()) note.title
-        else note.content.takeWhile { it != '\n' }.take(50).trim()
+        else note.content.take(50).substringBefore('\n').trim()
             .ifBlank { "Catatan tanpa judul" }
     }
 
     val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content
+        if (note.title.isNotBlank()) note.content.take(240).trim()
         else ""
-    }.trim()
-
-    val relativeDate = remember(note.updatedAt) {
-        formatRelativeDate(note.updatedAt)
     }
+
+    val createdDate = remember(note.createdAt) {
+        formatRelativeDate(note.createdAt)
+    }
+    val showUpdatedDate = note.updatedAt - note.createdAt > 60_000L
+    val updatedDate = remember(note.updatedAt) { formatRelativeDate(note.updatedAt) }
 
     val accentColor = NoteColorMapper.getNoteAccentColor(note.color)
 
@@ -953,13 +973,13 @@ fun NoteCardGrid(
         modifier = Modifier
             .fillMaxSize()
             .padding(12.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         // Bagian atas: bar warna + judul + pratinjau (mengisi ruang atas)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false),
+                .weight(1f, fill = true),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
@@ -993,17 +1013,33 @@ fun NoteCardGrid(
             }
         }
 
-        // Bagian bawah: tanggal kiri + ikon kanan (selalu menempel di dasar kartu)
+        // Bottom timestamps and actions stay aligned along the card edge.
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = relativeDate,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Dibuat $createdDate",
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (showUpdatedDate) {
+                    Text(
+                        text = "Diubah $updatedDate",
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             if (!isSelectionMode) {
                 Row(
