@@ -16,6 +16,13 @@ Aplikasi catatan Android yang simpel dan lokal. Tanpa login, tanpa akun, tanpa c
 - **Undo / redo:** kembali ke isi catatan sebelumnya
 - **Ekspor:** semua catatan ke `.ctn` (JSON Catetan), atau satu catatan ke TXT / JSON / Markdown
 - **Impor:** catatan dari file `.ctn` / `.txt` / `.json` / `.md`
+- **Todo:** daftar tugas dengan centang, pengingat, dan hitung mundur live
+- **Tanggal Dibuat & Diubah** di kartu catatan (list, grid, search): baris "Dibuat <tgl>" dan, bila selisih > 60 detik, baris "Diubah <tgl>"
+- **Tanggal Dibuat** di kartu Todo: baris "Dibuat <tgl>" di bawah teks todo
+- **Dialog Ekspor** diperbaiki: satu kolom penuh, judul + deskripsi lengkap per format, clickable seluruh baris, scrollable, dibaca di semua tema
+- **Penulisan file export** via SAF: validasi izin permanen, nama file unik, folder target bisa dipilih ulang
+- **Urutan DB-lalu-alarm** pada toggle/hapus Todo: perubahan database dulu, baru cancel alarm; error alarm tidak crash
+- **ReminderScheduler.cancel()** aman untuk todo tanpa pengingat (no-op, tanpa NPE)
 
 ## Teknologi
 
@@ -36,7 +43,7 @@ Aplikasi catatan Android yang simpel dan lokal. Tanpa login, tanpa akun, tanpa c
 
 ## Unduh
 
-Rilis terbaru: [Catetan v1.0.8](https://github.com/Nirune/Catetan/releases/latest). Versi sebelumnya ada di [halaman rilis](https://github.com/Nirune/Catetan/releases).
+Rilis terbaru: [Catetan v1.0.9](https://github.com/Nirune/Catetan/releases/latest). Versi sebelumnya ada di [halaman rilis](https://github.com/Nirune/Catetan/releases).
 
 ## Build
 
