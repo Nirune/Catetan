@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -121,6 +123,8 @@ private data class LinkifiedText(val text: AnnotatedString, val urls: List<UrlRa
 // http(s):// and www. URLs. Trailing punctuation is trimmed after matching.
 private val UrlRegex = Regex("""(?i)\b(?:https?://|www\.)[^\s<>"]+""")
 private val UrlTrailingPunctuation = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"')
+private const val LARGE_NOTE_READ_THRESHOLD = 32_000
+private const val LARGE_NOTE_CHUNK_SIZE = 4_000
 
 /**
  * Builds the read-mode AnnotatedString: URLs get a blue underlined style, and their
@@ -167,6 +171,52 @@ private fun linkUrlAt(
     if (local.x > layout.size.width || local.y > layout.size.height) return null
     val offset = layout.getOffsetForPosition(local)
     return urls.firstOrNull { offset >= it.start && offset < it.end }?.url
+}
+
+@Composable
+private fun LargeNoteReadBody(
+    content: String,
+    modifier: Modifier,
+    textStyle: androidx.compose.ui.text.TextStyle,
+    linkColor: Color,
+    contentTopPadding: androidx.compose.ui.unit.Dp,
+    onOpenUrl: (String) -> Unit,
+    onDoubleTap: () -> Unit
+) {
+    val chunks = remember(content) {
+        buildList {
+            var start = 0
+            while (start < content.length) {
+                val end = (start + LARGE_NOTE_CHUNK_SIZE).coerceAtMost(content.length)
+                add(content.substring(start, end))
+                start = end
+            }
+        }
+    }
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(top = contentTopPadding, start = 16.dp, end = 16.dp, bottom = 16.dp)
+    ) {
+        itemsIndexed(chunks, key = { index, _ -> index }) { _, chunk ->
+            val linkified = remember(chunk, linkColor) { linkifyContent(chunk, linkColor) }
+            var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+            Text(
+                text = linkified.text,
+                style = textStyle,
+                onTextLayout = { layout = it },
+                modifier = Modifier.pointerInput(linkified.urls, layout) {
+                    detectTapGestures(
+                        onTap = { point ->
+                            layout?.let { textLayout ->
+                                linkUrlAt(point, textLayout, linkified.urls, 0f)?.let(onOpenUrl)
+                            }
+                        },
+                        onDoubleTap = { onDoubleTap() }
+                    )
+                }
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -446,15 +496,16 @@ fun AddEditNoteScreen(
         clearHistory()
     }
 
-    fun saveNote() {
-        scope.launch {
-            if (performSave()) {
-                Log.d("Autosave", "saveNote: toast ditampilkan (perilaku tombol centang)")
-                showSavedToast()
-            } else {
-                Log.d("Autosave", "saveNote: toast dilewati, tidak ada perubahan")
-            }
-        }
+    // Satu pintu keluar untuk tombol centang, sama seperti tombol back top bar.
+    // Guard mencegah ketukan ganda memicu proses keluar dua kali.
+    var isExitingFromCheck by remember { mutableStateOf(false) }
+
+    fun saveAndExitFromCheck() {
+        if (isExitingFromCheck) return
+        isExitingFromCheck = true
+        debounceJob.value?.cancel()
+        saveAndExit()
+        onBack()
     }
 
     // Entering edit mode: put the cursor at the end and bring up the keyboard.
@@ -467,8 +518,10 @@ fun AddEditNoteScreen(
 
     // Read-mode link styling: one AnnotatedString with blue underlined URLs.
     val linkColor = MaterialTheme.colorScheme.primary
-    val linkifiedContent = remember(contentValue.text, linkColor) {
-        linkifyContent(contentValue.text, linkColor)
+    val isLargeReadNote = !isEditing && contentValue.text.length > LARGE_NOTE_READ_THRESHOLD
+    val linkifiedContent = remember(contentValue.text, linkColor, isLargeReadNote) {
+        if (isLargeReadNote) LinkifiedText(AnnotatedString(""), emptyList())
+        else linkifyContent(contentValue.text, linkColor)
     }
 
     fun openUrl(url: String) {
@@ -628,7 +681,7 @@ fun AddEditNoteScreen(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .clickable { saveNote() },
+                                .clickable { saveAndExitFromCheck() },
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
@@ -679,7 +732,19 @@ fun AddEditNoteScreen(
             val contentTopPadding = with(density) { NoteLineHeight.toDp() }
 
             // Ruled-paper body: content scrolls together with the lines.
-            PaperBody(
+            if (!isEditing && isLargeReadNote) {
+                LargeNoteReadBody(
+                    content = contentValue.text,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    textStyle = bodyTextStyle,
+                    linkColor = linkColor,
+                    contentTopPadding = contentTopPadding,
+                    onOpenUrl = { openUrl(it) },
+                    onDoubleTap = { enterEditMode() }
+                )
+            } else PaperBody(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -704,6 +769,7 @@ fun AddEditNoteScreen(
                 if (isEditing) {
                     BasicTextField(
                         value = contentValue,
+                        maxLines = if (contentValue.text.length > LARGE_NOTE_READ_THRESHOLD) 500 else Int.MAX_VALUE,
                         onValueChange = { newValue ->
                             val oldValue = contentValue
                             if (newValue.text != oldValue.text) {

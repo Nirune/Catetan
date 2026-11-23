@@ -265,69 +265,6 @@ fun TodoScreen(
         modifier = modifier
             .fillMaxSize()
     ) {
-        if (activeTodos.isNotEmpty()) {
-            SectionHeader(title = "Aktif", count = activeTodos.size)
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                contentPadding = PaddingValues(bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(activeTodos, key = { it.id }) { todo ->
-                    TodoItem(
-                        todo = todo,
-                        onToggle = { viewModel.toggleComplete(todo) },
-                        onEdit = {
-                            suppressDialogAutofocus = false
-                            editingTodoId = todo.id
-                            editDraft = todo.text
-                        },
-                        onDelete = {
-                            viewModel.deleteTodo(todo)
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message = "Todo dihapus", actionLabel = "OK")
-                            }
-                        },
-                        onReminderClick = { reminderPickerTarget = ReminderPickerTarget.Existing(todo.id, todo.text, todo.reminderAt) },
-                        tickerNow = tickerNow
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        if (completedTodos.isNotEmpty()) {
-            SectionHeader(title = "Selesai", count = completedTodos.size)
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                contentPadding = PaddingValues(bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(completedTodos, key = { it.id }) { todo ->
-                    TodoItem(
-                        todo = todo,
-                        onToggle = { viewModel.toggleComplete(todo) },
-                        onEdit = {
-                            suppressDialogAutofocus = false
-                            editingTodoId = todo.id
-                            editDraft = todo.text
-                        },
-                        onDelete = {
-                            viewModel.deleteTodo(todo)
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message = "Todo dihapus", actionLabel = "OK")
-                            }
-                        },
-                        onReminderClick = { reminderPickerTarget = ReminderPickerTarget.Existing(todo.id, todo.text, todo.reminderAt) },
-                        tickerNow = tickerNow
-                    )
-                }
-            }
-        }
-
         if (todos.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -357,6 +294,68 @@ fun TodoScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         textAlign = TextAlign.Center
                     )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(bottom = 88.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (activeTodos.isNotEmpty()) {
+                    item(key = "header_aktif") {
+                        SectionHeader(title = "Aktif", count = activeTodos.size)
+                    }
+                    items(activeTodos, key = { "aktif_${it.id}" }) { todo ->
+                        TodoItem(
+                            todo = todo,
+                            onToggle = { viewModel.toggleComplete(todo) },
+                            onEdit = {
+                                suppressDialogAutofocus = false
+                                editingTodoId = todo.id
+                                editDraft = todo.text
+                            },
+                            onDelete = {
+                                viewModel.deleteTodo(todo)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(message = "Todo dihapus", actionLabel = "OK")
+                                }
+                            },
+                            onReminderClick = { reminderPickerTarget = ReminderPickerTarget.Existing(todo.id, todo.text, todo.reminderAt) },
+                            tickerNow = tickerNow
+                        )
+                    }
+                }
+                if (completedTodos.isNotEmpty()) {
+                    item(key = "header_selesai") {
+                        Column {
+                            if (activeTodos.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+                            SectionHeader(title = "Selesai", count = completedTodos.size)
+                        }
+                    }
+                    items(completedTodos, key = { "selesai_${it.id}" }) { todo ->
+                        TodoItem(
+                            todo = todo,
+                            onToggle = { viewModel.toggleComplete(todo) },
+                            onEdit = {
+                                suppressDialogAutofocus = false
+                                editingTodoId = todo.id
+                                editDraft = todo.text
+                            },
+                            onDelete = {
+                                viewModel.deleteTodo(todo)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(message = "Todo dihapus", actionLabel = "OK")
+                                }
+                            },
+                            onReminderClick = { reminderPickerTarget = ReminderPickerTarget.Existing(todo.id, todo.text, todo.reminderAt) },
+                            tickerNow = tickerNow
+                        )
+                    }
                 }
             }
         }
@@ -398,7 +397,7 @@ private fun SectionHeader(title: String, count: Int) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(vertical = 8.dp)
     )
 }
 
@@ -494,22 +493,34 @@ private fun TodoItem(
                     )
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = todo.text,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = textColor,
-                    overflow = TextOverflow.Ellipsis,
-                    maxLines = 3,
+                Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .then(Modifier
+                ) {
+                    Text(
+                        text = todo.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = textColor,
+                        overflow = TextOverflow.Ellipsis,
+                        maxLines = 3,
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .clickable(onClick = onEdit)
-                            .padding(vertical = 8.dp)
+                            .padding(vertical = 8.dp),
+                        textDecoration = if (isCompleted) TextDecoration.LineThrough else null
+                    )
+                    Text(
+                        text = "Dibuat ${formatNoteDate(todo.createdAt)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                            alpha = if (isCompleted) 0.5f else 1f
                         ),
-                    textDecoration = if (isCompleted) TextDecoration.LineThrough else null
-                )
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(onClick = onEdit) {
                     Icon(

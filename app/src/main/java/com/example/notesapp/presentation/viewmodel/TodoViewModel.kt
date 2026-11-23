@@ -55,8 +55,8 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.updateTodo(updated)
             if (updated.isCompleted) {
-                ReminderScheduler.cancel(getApplication(), todo.id)
                 repository.clearReminderAt(todo.id)
+                ReminderScheduler.cancel(getApplication(), todo.id)
             }
         }
     }
@@ -69,15 +69,15 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteTodo(todo: TodoEntity) {
         viewModelScope.launch {
-            ReminderScheduler.cancel(getApplication(), todo.id)
             repository.deleteTodo(todo)
+            ReminderScheduler.cancel(getApplication(), todo.id)
         }
     }
 
     fun deleteTodoById(id: Long) {
         viewModelScope.launch {
-            ReminderScheduler.cancel(getApplication(), id)
             repository.deleteTodoById(id)
+            ReminderScheduler.cancel(getApplication(), id)
         }
     }
 

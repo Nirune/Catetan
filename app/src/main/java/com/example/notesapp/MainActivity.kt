@@ -93,7 +93,15 @@ class MainActivity : ComponentActivity() {
 
     // Folder picker launcher untuk ganti path export
     private val pickFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        uri?.let { ThemePreferences.setExportPathUri(it.toString()) }
+        uri?.let { selectedUri ->
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                contentResolver.takePersistableUriPermission(selectedUri, flags)
+                ThemePreferences.setExportPathUri(selectedUri.toString())
+            } catch (e: SecurityException) {
+                android.util.Log.e("Export", "Failed to persist folder permission uri=$selectedUri", e)
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -261,7 +269,7 @@ fun NotesAppNavigation(
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                 indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
