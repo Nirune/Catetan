@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.LocalContentColor
 import com.example.notesapp.R
@@ -665,7 +666,7 @@ private fun NoteGridContent(
         items(notes) { note ->
             val isSelected = selectedNoteIds.contains(note.id)
             NoteCardSurface(
-                modifier = Modifier.heightIn(min = 200.dp),
+                modifier = Modifier.height(gridCardHeight()),
                 isSelected = isSelected,
                 isSelectionMode = isSelectionMode,
                 onClick = { onNoteClick(note) },
@@ -892,6 +893,7 @@ fun NoteCardGrid(
     onPinToggle: () -> Unit,
     onExport: (() -> Unit)? = null
 ) {
+    val iconButtonSize = 36.dp
     val displayTitle = remember(note.title, note.content) {
         if (note.title.isNotBlank()) note.title
         else note.content.take(50).substringBefore('\n').trim()
@@ -915,13 +917,13 @@ fun NoteCardGrid(
         modifier = Modifier
             .fillMaxSize()
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
         // Bagian atas: bar warna + judul + pratinjau (mengisi ruang atas)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = true),
+                .weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // 1. Bar warna atas (6dp, ikut terpotong sudut Card)
@@ -955,16 +957,12 @@ fun NoteCardGrid(
             }
         }
 
-        // Bottom timestamps and actions stay aligned along the card edge.
-        Row(
+        // Dates and actions are stacked to preserve space in the narrow grid cell.
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = "Dibuat $createdDate",
                     fontSize = 11.sp,
@@ -985,26 +983,60 @@ fun NoteCardGrid(
 
             if (!isSelectionMode) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onPinToggle) {
+                    IconButton(
+                        onClick = onPinToggle,
+                        modifier = Modifier.size(iconButtonSize)
+                    ) {
                         Icon(
                             imageVector = if (note.isPinned) Icons.Filled.Star else StarOutlineIcon,
                             contentDescription = if (note.isPinned) "Batal pin" else "Pin",
-                            tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = onExport ?: {}) {
-                        Icon(Icons.Filled.Share, contentDescription = "Ekspor", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(
+                        onClick = onExport ?: {},
+                        modifier = Modifier.size(iconButtonSize)
+                    ) {
+                        Icon(
+                            Icons.Filled.Share,
+                            contentDescription = "Ekspor",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Hapus", tint = MaterialTheme.colorScheme.error)
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(iconButtonSize)
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Hapus",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun gridCardHeight(): androidx.compose.ui.unit.Dp {
+    val density = LocalDensity.current
+    val fontScale = density.fontScale.coerceAtMost(1.3f)
+    val titleHeight = MaterialTheme.typography.bodyLarge.lineHeight.value.dp.coerceAtLeast(20.dp) * 2
+    val previewHeight = 13.dp * 1.25f * 3
+    val dateHeight = MaterialTheme.typography.labelSmall.lineHeight.value.dp.coerceAtLeast(14.dp) * 2 + 2.dp
+    val topContent = 6.dp + 4.dp + titleHeight + 4.dp + previewHeight
+    val bottomContent = dateHeight + 2.dp + 36.dp
+    val contentPadding = 24.dp
+    return ((topContent + bottomContent + contentPadding) * fontScale).coerceIn(216.dp, 300.dp)
 }
 
 /**
