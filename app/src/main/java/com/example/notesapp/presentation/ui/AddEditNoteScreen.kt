@@ -16,14 +16,23 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -55,9 +64,15 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.Paragraph
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -157,6 +172,34 @@ private fun linkifyContent(raw: String, linkColor: Color): LinkifiedText {
 }
 
 /**
+ * Applies find-in-page highlights to an AnnotatedString.
+ * Active match gets orange background, other matches get yellow background.
+ * Only applies to read mode (non-editing).
+ */
+private fun applyFindHighlights(
+    annotatedString: AnnotatedString,
+    matches: List<Int>,
+    activeMatchIndex: Int,
+    queryLength: Int
+): AnnotatedString {
+    if (matches.isEmpty() || queryLength == 0) return annotatedString
+    val builder = AnnotatedString.Builder(annotatedString)
+    val activeColor = Color(0xFFFF9800) // Orange for active match
+    val otherColor = Color(0xFFFFFF00) // Yellow for other matches
+    matches.forEachIndexed { index, start ->
+        val end = start + queryLength
+        if (start < 0 || end > annotatedString.length) return@forEachIndexed
+        val color = if (index == activeMatchIndex) activeColor else otherColor
+        builder.addStyle(
+            SpanStyle(background = color),
+            start,
+            end
+        )
+    }
+    return builder.toAnnotatedString()
+}
+
+/**
  * Resolves a tap position on the read-mode text to a URL range, taking the text's
  * left padding into account. Returns null for taps on plain text or empty paper.
  */
@@ -180,9 +223,15 @@ private fun LargeNoteReadBody(
     textStyle: androidx.compose.ui.text.TextStyle,
     linkColor: Color,
     contentTopPadding: androidx.compose.ui.unit.Dp,
+    listState: LazyListState,
+    findQuery: String,
+    findMatches: List<Int>,
+    activeMatchIndex: Int,
+    activeMatchStart: Int?,
     onOpenUrl: (String) -> Unit,
     onDoubleTap: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     val chunks = remember(content) {
         buildList {
             var start = 0
@@ -195,15 +244,46 @@ private fun LargeNoteReadBody(
     }
     LazyColumn(
         modifier = modifier,
+        state = listState,
         contentPadding = PaddingValues(top = contentTopPadding, start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
-        itemsIndexed(chunks, key = { index, _ -> index }) { _, chunk ->
-            val linkified = remember(chunk, linkColor) { linkifyContent(chunk, linkColor) }
+        itemsIndexed(chunks, key = { index, _ -> index }) { chunkIndex, chunk ->
+            val chunkStart = chunkIndex * LARGE_NOTE_CHUNK_SIZE
+            val chunkEnd = chunkStart + chunk.length
+            val localMatches = remember(findMatches, chunkStart, chunkEnd) {
+                findMatches.mapNotNull { match ->
+                    if (match >= chunkStart && match + findQuery.length <= chunkEnd) match - chunkStart else null
+                }
+            }
+            val localActiveMatchIndex = remember(findMatches, activeMatchIndex, chunkStart, chunkEnd) {
+                if (activeMatchIndex in findMatches.indices && findMatches[activeMatchIndex] in chunkStart until chunkEnd) {
+                    findMatches.take(activeMatchIndex).count { it >= chunkStart && it < chunkEnd }
+                } else -1
+            }
+            val linkified = remember(chunk, linkColor, findQuery, localMatches, localActiveMatchIndex) {
+                val base = linkifyContent(chunk, linkColor)
+                if (findQuery.isNotEmpty() && localMatches.isNotEmpty()) {
+                    LinkifiedText(
+                        applyFindHighlights(base.text, localMatches, localActiveMatchIndex, findQuery.length),
+                        base.urls
+                    )
+                } else base
+            }
             var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
             Text(
                 text = linkified.text,
                 style = textStyle,
-                onTextLayout = { layout = it },
+                onTextLayout = { result ->
+                    layout = result
+                    if (activeMatchStart != null && activeMatchStart in chunkStart until chunkEnd) {
+                        val localOffset = activeMatchStart - chunkStart
+                        val line = result.getLineForOffset(localOffset)
+                        val lineTop = result.getLineTop(line).toInt().coerceAtLeast(0)
+                        scope.launch {
+                            listState.animateScrollToItem(chunkIndex, lineTop)
+                        }
+                    }
+                },
                 modifier = Modifier.pointerInput(linkified.urls, layout) {
                     detectTapGestures(
                         onTap = { point ->
@@ -287,6 +367,78 @@ fun AddEditNoteScreen(
         lastSnapshotAt = System.currentTimeMillis()
     }
 
+    // Find in page state
+    var showFindBar by remember { mutableStateOf(false) }
+    var findQuery by remember { mutableStateOf("") }
+    var findMatches by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var activeMatchIndex by remember { mutableStateOf(-1) }
+    val isLargeReadNote = !isEditing && contentValue.text.length > LARGE_NOTE_READ_THRESHOLD
+    val findBarFocusRequester = remember { FocusRequester() }
+    val normalBodyScrollState = rememberScrollState()
+    val largeBodyListState = rememberLazyListState()
+    var normalBodyLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+
+    fun closeFindBar() {
+        showFindBar = false
+        findQuery = ""
+        findMatches = emptyList()
+        activeMatchIndex = -1
+        keyboardController?.hide()
+        focusManager.clearFocus()
+    }
+
+    BackHandler(enabled = showFindBar) {
+        closeFindBar()
+    }
+
+    // Find in page helpers
+    fun updateFindMatches() {
+        if (findQuery.isBlank()) {
+            findMatches = emptyList()
+            activeMatchIndex = -1
+            return
+        }
+        val text = contentValue.text.lowercase(java.util.Locale.ROOT)
+        val query = findQuery.lowercase(java.util.Locale.ROOT)
+        val matches = mutableListOf<Int>()
+        var index = text.indexOf(query)
+        while (index != -1) {
+            matches.add(index)
+            index = text.indexOf(query, index + 1)
+        }
+        findMatches = matches
+        activeMatchIndex = if (matches.isNotEmpty()) 0 else -1
+    }
+
+    fun goToNextMatch() {
+        if (findMatches.isEmpty()) return
+        activeMatchIndex = (activeMatchIndex + 1) % findMatches.size
+    }
+
+    fun goToPreviousMatch() {
+        if (findMatches.isEmpty()) return
+        activeMatchIndex = (activeMatchIndex - 1 + findMatches.size) % findMatches.size
+    }
+
+    fun scrollToActiveMatch() {
+        if (!showFindBar || activeMatchIndex !in findMatches.indices) return
+        val start = findMatches[activeMatchIndex]
+        if (isLargeReadNote) {
+            scope.launch {
+                largeBodyListState.animateScrollToItem(start / LARGE_NOTE_CHUNK_SIZE)
+            }
+        } else {
+            val layout = normalBodyLayout ?: return
+            val line = layout.getLineForOffset(start)
+            val lineTop = layout.getLineTop(line).toInt() + with(density) { NoteLineHeight.roundToPx() }
+            scope.launch {
+                normalBodyScrollState.animateScrollTo(lineTop.coerceAtLeast(0))
+            }
+        }
+    }
+
+    LaunchedEffect(showFindBar, findQuery, activeMatchIndex, findMatches) { scrollToActiveMatch() }
+
     // ==================== AUTOSAVE LOGIC ====================
     // Snapshot of the last successfully saved state for dirty checking
     val savedSnapshot = remember { mutableStateOf<Triple<String, String, Int>?>(null) }
@@ -304,6 +456,11 @@ fun AddEditNoteScreen(
     val hasSavedSinceOpen = rememberSaveable { mutableStateOf(false) }
     // Dipakai buat bedakan alasan log: belum ada perubahan vs toast sudah pernah ditampilkan.
     val toastWasShown = rememberSaveable { mutableStateOf(false) }
+
+    // Update find matches when query changes
+    LaunchedEffect(findQuery, contentValue.text) {
+        updateFindMatches()
+    }
 
     // Update savedSnapshot when note is successfully saved (insert or update)
     fun updateSavedSnapshot(note: NoteEntity) {
@@ -478,7 +635,7 @@ fun AddEditNoteScreen(
     }
 
     // BackHandler memastikan tombol back sistem juga menyimpan sebelum keluar.
-    BackHandler {
+    BackHandler(enabled = !showFindBar) {
         logTrigger("BackHandler")
         saveAndExit()
         onBack()
@@ -516,12 +673,30 @@ fun AddEditNoteScreen(
         }
     }
 
+    LaunchedEffect(showFindBar) {
+        if (showFindBar) {
+            findBarFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
     // Read-mode link styling: one AnnotatedString with blue underlined URLs.
+    // Also applies find-in-page highlights when find bar is active.
     val linkColor = MaterialTheme.colorScheme.primary
-    val isLargeReadNote = !isEditing && contentValue.text.length > LARGE_NOTE_READ_THRESHOLD
-    val linkifiedContent = remember(contentValue.text, linkColor, isLargeReadNote) {
-        if (isLargeReadNote) LinkifiedText(AnnotatedString(""), emptyList())
-        else linkifyContent(contentValue.text, linkColor)
+    val linkifiedContent = remember(contentValue.text, linkColor, isLargeReadNote, showFindBar, findQuery, findMatches, activeMatchIndex) {
+        if (isLargeReadNote) {
+            LinkifiedText(AnnotatedString(""), emptyList())
+        } else {
+            val base = linkifyContent(contentValue.text, linkColor)
+            if (showFindBar && findQuery.isNotBlank() && findMatches.isNotEmpty()) {
+                LinkifiedText(
+                    text = applyFindHighlights(base.text, findMatches, activeMatchIndex, findQuery.length),
+                    urls = base.urls
+                )
+            } else {
+                base
+            }
+        }
     }
 
     fun openUrl(url: String) {
@@ -623,6 +798,18 @@ fun AddEditNoteScreen(
                 },
                 actions = {
                     if (isEditing) {
+                        IconButton(onClick = {
+                            showFindBar = true
+                            findQuery = ""
+                            findMatches = emptyList()
+                            activeMatchIndex = -1
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Cari di catatan",
+                                tint = topBarContentColor
+                            )
+                        }
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
@@ -700,6 +887,18 @@ fun AddEditNoteScreen(
                             }
                         }
                     } else {
+                        IconButton(onClick = {
+                            showFindBar = true
+                            findQuery = ""
+                            findMatches = emptyList()
+                            activeMatchIndex = -1
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Cari di catatan",
+                                tint = topBarContentColor
+                            )
+                        }
                         IconButton(onClick = { enterEditMode() }) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_edit),
@@ -726,6 +925,21 @@ fun AddEditNoteScreen(
                 .imePadding()
                 .navigationBarsPadding()
         ) {
+            // Find bar
+            if (showFindBar) {
+                FindBar(
+                    query = findQuery,
+                    onQueryChange = { findQuery = it },
+                    onClose = { closeFindBar() },
+                    onNext = { goToNextMatch() },
+                    onPrevious = { goToPreviousMatch() },
+                    matchCount = findMatches.size,
+                    activeMatchIndex = activeMatchIndex,
+                    focusRequester = findBarFocusRequester,
+                    topBarContentColor = topBarContentColor,
+                )
+            }
+
             // Jarak atas konten (teks) harus identik untuk mode lihat dan edit agar teks
             // tidak bergeser saat beralih mode. Garis pertama digambar di bawah baris ini.
             val contentTopPaddingPx = with(density) { NoteLineHeight.toPx() }
@@ -741,6 +955,11 @@ fun AddEditNoteScreen(
                     textStyle = bodyTextStyle,
                     linkColor = linkColor,
                     contentTopPadding = contentTopPadding,
+                    listState = largeBodyListState,
+                    findQuery = if (showFindBar) findQuery else "",
+                    findMatches = if (showFindBar) findMatches else emptyList(),
+                    activeMatchIndex = activeMatchIndex,
+                    activeMatchStart = if (showFindBar && activeMatchIndex in findMatches.indices) findMatches[activeMatchIndex] else null,
                     onOpenUrl = { openUrl(it) },
                     onDoubleTap = { enterEditMode() }
                 )
@@ -758,7 +977,8 @@ fun AddEditNoteScreen(
                     )?.let { url -> openUrl(url) }
                 },
                 onDoubleTap = { enterEditMode() },
-                contentTopPaddingPx = contentTopPaddingPx
+                contentTopPaddingPx = contentTopPaddingPx,
+                scrollState = normalBodyScrollState
             ) { onTextLayout ->
                 val contentPadding = PaddingValues(
                     top = contentTopPadding,
@@ -770,6 +990,23 @@ fun AddEditNoteScreen(
                     BasicTextField(
                         value = contentValue,
                         maxLines = if (contentValue.text.length > LARGE_NOTE_READ_THRESHOLD) 500 else Int.MAX_VALUE,
+                        visualTransformation = remember(showFindBar, findQuery, findMatches, activeMatchIndex) {
+                            if (!showFindBar || findQuery.isBlank() || findMatches.isEmpty()) {
+                                VisualTransformation.None
+                            } else {
+                                VisualTransformation { source ->
+                                    TransformedText(
+                                        text = applyFindHighlights(
+                                            AnnotatedString(source.text),
+                                            findMatches,
+                                            activeMatchIndex,
+                                            findQuery.length
+                                        ),
+                                        offsetMapping = OffsetMapping.Identity
+                                    )
+                                }
+                            }
+                        },
                         onValueChange = { newValue ->
                             val oldValue = contentValue
                             if (newValue.text != oldValue.text) {
@@ -801,7 +1038,10 @@ fun AddEditNoteScreen(
                             .focusRequester(focusRequester),
                         textStyle = bodyTextStyle,
                         cursorBrush = SolidColor(currentAccent),
-                        onTextLayout = onTextLayout,
+                        onTextLayout = { result ->
+                            onTextLayout(result)
+                            normalBodyLayout = result
+                        },
                         decorationBox = { innerTextField ->
                             Box {
                                 if (contentValue.text.isEmpty()) {
@@ -824,7 +1064,10 @@ fun AddEditNoteScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(contentPadding),
-                        onTextLayout = onTextLayout
+                        onTextLayout = { result ->
+                            onTextLayout(result)
+                            normalBodyLayout = result
+                        }
                     )
                 }
             }
@@ -966,6 +1209,7 @@ private fun PaperBody(
     onTap: ((Offset, TextLayoutResult) -> Unit)? = null,
     onDoubleTap: (() -> Unit)? = null,
     contentTopPaddingPx: Float = 0f,
+    scrollState: ScrollState = rememberScrollState(),
     content: @Composable (onTextLayout: (TextLayoutResult) -> Unit) -> Unit
 ) {
     val density = LocalDensity.current
@@ -999,7 +1243,7 @@ private fun PaperBody(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
         ) {
             Box(
                 modifier = Modifier
@@ -1080,6 +1324,102 @@ private fun NoteColorPopup(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FindBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    matchCount: Int,
+    activeMatchIndex: Int,
+    focusRequester: FocusRequester,
+    topBarContentColor: Color,
+) {
+    val backgroundColor = MaterialTheme.colorScheme.surfaceVariant
+
+    Surface(
+        color = backgroundColor,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Close button
+            IconButton(onClick = onClose) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Tutup pencarian",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Query input
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .focusRequester(focusRequester),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(topBarContentColor),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) {
+                            Text(
+                                text = "Cari di catatan...",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                ),
+                                modifier = Modifier.padding(start = 12.dp)
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onNext() }),
+                singleLine = true,
+                maxLines = 1
+            )
+
+            // Counter
+            Text(
+                text = if (query.isBlank()) "0/0" else "${(if (matchCount == 0) 0 else activeMatchIndex + 1)}/$matchCount",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+
+            // Previous button
+            IconButton(onClick = onPrevious, enabled = matchCount > 0) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowUp,
+                    contentDescription = "Kemunculan sebelumnya",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Next button
+            IconButton(onClick = onNext, enabled = matchCount > 0) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Kemunculan berikutnya",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
