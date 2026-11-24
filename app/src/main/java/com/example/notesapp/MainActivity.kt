@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -432,10 +434,10 @@ fun NotesTopBar(
             ),
             actions = {
                 IconButton(onClick = onExportClick) {
-                    Icon(Icons.Default.Share, contentDescription = "Export")
+                    Icon(Icons.Filled.FileDownload, contentDescription = "Export")
                 }
                 IconButton(onClick = onImportClick) {
-                    Icon(Icons.Default.Add, contentDescription = "Impor")
+                    Icon(Icons.Filled.FileUpload, contentDescription = "Impor")
                 }
                 IconButton(onClick = onSettingsClick) {
                     Icon(Icons.Default.Settings, contentDescription = "Pengaturan")
