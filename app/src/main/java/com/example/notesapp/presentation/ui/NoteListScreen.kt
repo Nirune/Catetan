@@ -5,18 +5,27 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -48,6 +57,12 @@ import com.example.notesapp.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -59,6 +74,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Velocity
+import kotlin.math.abs
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.presentation.ui.ThemeMode
 import com.example.notesapp.presentation.ui.NoteSortOrder
@@ -180,6 +197,10 @@ fun NoteListScreen(
     var folderNameDraft by remember { mutableStateOf("") }
     var folderError by remember { mutableStateOf<String?>(null) }
     var showDeleteFolderConfirmation by remember { mutableStateOf(false) }
+    val folderChipState = rememberLazyListState()
+    var folderSwipeDirection by remember { mutableStateOf(0) }
+    val density = LocalDensity.current
+    val viewConfiguration = LocalViewConfiguration.current
 
     var showAllExportDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -214,6 +235,29 @@ fun NoteListScreen(
         onSelectionChange(emptyList())
         notesToDeleteIds = emptyList()
         showDeleteConfirmation = false
+    }
+
+    fun selectFolderAt(index: Int) {
+        val currentIndex = if (activeFolderId == null) 0 else folders.indexOfFirst { it.id == activeFolderId } + 1
+        if (index != currentIndex) folderSwipeDirection = if (index > currentIndex) 1 else -1
+        when (index) {
+            0 -> viewModel.setActiveFolder(null)
+            in 1..folders.size -> viewModel.setActiveFolder(folders[index - 1].id)
+        }
+    }
+
+    fun moveFolderBy(direction: Int) {
+        if (isSelectionMode || direction == 0) return
+        val currentIndex = if (activeFolderId == null) 0 else folders.indexOfFirst { it.id == activeFolderId } + 1
+        val targetIndex = (currentIndex + direction).coerceIn(0, folders.size)
+        if (targetIndex != currentIndex) {
+            selectFolderAt(targetIndex)
+        }
+    }
+
+    LaunchedEffect(activeFolderId, folders) {
+        val activeIndex = if (activeFolderId == null) 0 else folders.indexOfFirst { it.id == activeFolderId } + 1
+        if (activeIndex >= 0) folderChipState.animateScrollToItem(activeIndex)
     }
 
     fun toggleSelectAll() {
@@ -750,24 +794,31 @@ fun NoteListScreen(
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(vertical = 8.dp),
+                state = folderChipState,
+                contentPadding = PaddingValues(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FolderFilterChip(
-                    label = "Semua",
-                    selected = activeFolderId == null,
-                    onClick = { viewModel.setActiveFolder(null) }
-                )
-                folders.forEach { folder ->
+                item(key = "folder_chip_all") {
+                    FolderFilterChip(
+                        label = "Semua",
+                        selected = activeFolderId == null,
+                        onClick = { selectFolderAt(0) },
+                        bringIntoViewRequester = remember { BringIntoViewRequester() },
+                        activeKey = activeFolderId == null
+                    )
+                }
+                itemsIndexed(folders, key = { _, folder -> "folder_chip_${folder.id}" }) { index, folder ->
                     FolderFilterChip(
                         label = folder.name,
                         selected = activeFolderId == folder.id,
-                        onClick = { viewModel.setActiveFolder(folder.id) },
+                        onClick = { selectFolderAt(index + 1) },
+                        bringIntoViewRequester = remember(folder.id) { BringIntoViewRequester() },
+                        activeKey = activeFolderId == folder.id,
                         onLongClick = {
                             folderTarget = folder
                             folderNameDraft = folder.name
@@ -775,62 +826,85 @@ fun NoteListScreen(
                         }
                     )
                 }
-                FolderFilterChip(label = "+", selected = false, onClick = {
-                    folderTarget = null
-                    folderNameDraft = ""
-                    folderError = null
-                    folderDialogMode = "create"
-                })
-            }
-
-        if (sortedNotes.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = if (activeFolderId != null) "Folder kosong" else "Belum ada catatan",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
+                item(key = "folder_chip_add") {
+                    FolderFilterChip(label = "+", selected = false, onClick = {
+                        folderTarget = null
+                        folderNameDraft = ""
+                        folderError = null
+                        folderDialogMode = "create"
+                    })
                 }
             }
-        } else {
-            Box(modifier = Modifier.weight(1f)) {
-            when (viewMode) {
-                ViewMode.LIST -> NoteListContent(
-                    notes = sortedNotes,
-                    isSelectionMode = isSelectionMode,
-                    selectedNoteIds = selectedNoteIds,
-                    onNoteClick = onNoteClick,
-                    onLongClick = { noteId -> enterSelectionMode(noteId) },
-                    onToggleSelection = { noteId -> toggleSelection(noteId) },
-                    onDelete = { note -> noteToDeleteId = note.id },
-                    onPinToggle = { noteId -> viewModel.togglePin(noteId) },
-                    onExport = { note ->
-                        noteToExport = note
-                        showSingleExportDialog = true
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .folderSwipeGesture(
+                        enabled = !isSelectionMode,
+                        edgeExclusionFraction = 0.13f,
+                        touchSlop = viewConfiguration.touchSlop,
+                        thresholdPx = with(density) { 64.dp.toPx() },
+                        onSwipe = { direction -> moveFolderBy(direction) }
+                    )
+            ) {
+                AnimatedContent(
+                    targetState = activeFolderId,
+                    transitionSpec = {
+                        val enteringFrom = if (folderSwipeDirection > 0) 1 else -1
+                        slideInHorizontally { fullWidth -> enteringFrom * fullWidth } togetherWith
+                            slideOutHorizontally { fullWidth -> -enteringFrom * fullWidth }
                     },
-                    accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
-                )
-                ViewMode.GRID -> NoteGridContent(
-                    notes = sortedNotes,
-                    isSelectionMode = isSelectionMode,
-                    selectedNoteIds = selectedNoteIds,
-                    onNoteClick = onNoteClick,
-                    onLongClick = { noteId -> enterSelectionMode(noteId) },
-                    onToggleSelection = { noteId -> toggleSelection(noteId) },
-                    onDelete = { note -> noteToDeleteId = note.id },
-                    onPinToggle = { noteId -> viewModel.togglePin(noteId) },
-                    onExport = { note ->
-                        noteToExport = note
-                        showSingleExportDialog = true
-                    },
-                    accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
-                )
+                    label = "folderContentSlide"
+                ) { displayedFolderId ->
+                    val displayedNotes = remember(notes, displayedFolderId, sortOrder) {
+                        val inFolder = if (displayedFolderId == null) notes else notes.filter { it.folderId == displayedFolderId }
+                        sortNotes(inFolder, sortOrder)
+                    }
+                    if (displayedNotes.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (displayedFolderId != null) "Folder kosong" else "Belum ada catatan",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
+                    } else {
+                        when (viewMode) {
+                            ViewMode.LIST -> NoteListContent(
+                                notes = displayedNotes,
+                                isSelectionMode = isSelectionMode,
+                                selectedNoteIds = selectedNoteIds,
+                                onNoteClick = onNoteClick,
+                                onLongClick = { noteId -> enterSelectionMode(noteId) },
+                                onToggleSelection = { noteId -> toggleSelection(noteId) },
+                                onDelete = { note -> noteToDeleteId = note.id },
+                                onPinToggle = { noteId -> viewModel.togglePin(noteId) },
+                                onExport = { note ->
+                                    noteToExport = note
+                                    showSingleExportDialog = true
+                                },
+                                accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
+                            )
+                            ViewMode.GRID -> NoteGridContent(
+                                notes = displayedNotes,
+                                isSelectionMode = isSelectionMode,
+                                selectedNoteIds = selectedNoteIds,
+                                onNoteClick = onNoteClick,
+                                onLongClick = { noteId -> enterSelectionMode(noteId) },
+                                onToggleSelection = { noteId -> toggleSelection(noteId) },
+                                onDelete = { note -> noteToDeleteId = note.id },
+                                onPinToggle = { noteId -> viewModel.togglePin(noteId) },
+                                onExport = { note ->
+                                    noteToExport = note
+                                    showSingleExportDialog = true
+                                },
+                                accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
+                            )
+                        }
+                    }
+                }
             }
-            }
-        }
         }
     }
 
@@ -1463,18 +1537,65 @@ private fun sortOrderLabel(order: NoteSortOrder): String = when (order) {
     NoteSortOrder.COLOR -> "Warna"
 }
 
+private fun Modifier.folderSwipeGesture(
+    enabled: Boolean,
+    edgeExclusionFraction: Float,
+    touchSlop: Float,
+    thresholdPx: Float,
+    onSwipe: (Int) -> Unit
+): Modifier = pointerInput(enabled, edgeExclusionFraction, touchSlop, thresholdPx) {
+    if (!enabled) return@pointerInput
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        val width = size.width.toFloat()
+        val safeLeft = width * edgeExclusionFraction
+        val safeRight = width * (1f - edgeExclusionFraction)
+        if (down.position.x !in safeLeft..safeRight) return@awaitEachGesture
+
+        val tracker = VelocityTracker()
+        tracker.addPosition(down.uptimeMillis, down.position)
+        var totalX = 0f
+        var axisLocked: Boolean? = null
+        var pointerReleased = false
+        while (!pointerReleased) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            tracker.addPosition(change.uptimeMillis, change.position)
+            val dx = change.position.x - down.position.x
+            val dy = change.position.y - down.position.y
+            totalX = dx
+            if (axisLocked == null && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                axisLocked = abs(dx) > 2f * abs(dy)
+            }
+            if (axisLocked == true) change.consume()
+            pointerReleased = change.changedToUpIgnoreConsumed()
+        }
+        if (axisLocked == true) {
+            val velocity = tracker.calculateVelocity().x
+            if (abs(totalX) > thresholdPx || abs(velocity) > 900f) {
+                val swipeX = if (abs(totalX) > thresholdPx) totalX else velocity
+                onSwipe(if (swipeX < 0f) 1 else -1)
+            }
+        }
+    }
+}
+
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun FolderFilterChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    bringIntoViewRequester: BringIntoViewRequester? = null,
+    activeKey: Boolean = false
 ) {
+    LaunchedEffect(activeKey) {
+        if (activeKey) bringIntoViewRequester?.bringIntoView()
+    }
     Surface(
-        modifier = Modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = onLongClick
-        ),
+        modifier = (bringIntoViewRequester?.let { Modifier.bringIntoViewRequester(it) } ?: Modifier)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(50),
         color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
