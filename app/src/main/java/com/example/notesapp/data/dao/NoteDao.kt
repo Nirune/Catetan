@@ -13,6 +13,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY isPinned DESC, updatedAt DESC")
     fun getAllNotes(): Flow<List<NoteEntity>>
 
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (:folderId IS NULL OR folderId = :folderId) ORDER BY isPinned DESC, updatedAt DESC")
+    fun getNotesInFolder(folderId: Long?): Flow<List<NoteEntity>>
+
     @Query("SELECT * FROM notes WHERE id = :id AND deletedAt IS NULL")
     fun getNoteById(id: Long): Flow<NoteEntity?>
 
@@ -34,6 +37,12 @@ interface NoteDao {
     @Query("UPDATE notes SET deletedAt = :deletedAt, isPinned = 0 WHERE id IN (:ids) AND deletedAt IS NULL")
     suspend fun moveNotesToTrash(ids: List<Long>, deletedAt: Long): Int
 
+    @Query("UPDATE notes SET folderId = NULL WHERE folderId = :folderId")
+    suspend fun clearFolderFromNotes(folderId: Long): Int
+
+    @Query("UPDATE notes SET folderId = :targetFolderId WHERE id IN (:ids) AND deletedAt IS NULL")
+    suspend fun moveNotesToFolder(ids: List<Long>, targetFolderId: Long?): Int
+
     @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun getTrashedNotes(): Flow<List<NoteEntity>>
 
@@ -51,6 +60,9 @@ interface NoteDao {
 
     @Query("UPDATE notes SET title = :title, content = :content, color = :color, updatedAt = :updatedAt WHERE id = :id AND deletedAt IS NULL")
     suspend fun updateActiveNote(id: Long, title: String, content: String, color: Int, updatedAt: Long): Int
+
+    @Query("UPDATE notes SET title = :title, content = :content, color = :color, updatedAt = :updatedAt, folderId = :folderId WHERE id = :id AND deletedAt IS NULL")
+    suspend fun updateActiveNoteWithFolder(id: Long, title: String, content: String, color: Int, updatedAt: Long, folderId: Long?): Int
 
     @Query("UPDATE notes SET isPinned = NOT isPinned WHERE id = :id AND deletedAt IS NULL")
     suspend fun togglePin(id: Long): Int

@@ -7,14 +7,17 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.notesapp.data.dao.NoteDao
+import com.example.notesapp.data.dao.FolderDao
 import com.example.notesapp.data.dao.TodoDao
 import com.example.notesapp.data.model.NoteEntity
+import com.example.notesapp.data.model.FolderEntity
 import com.example.notesapp.data.model.TodoEntity
 
-@Database(entities = [NoteEntity::class, TodoEntity::class], version = 4, exportSchema = false)
+@Database(entities = [NoteEntity::class, TodoEntity::class, FolderEntity::class], version = 5, exportSchema = false)
 abstract class NotesDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun todoDao(): TodoDao
+    abstract fun folderDao(): FolderDao
 
     companion object {
         @Volatile
@@ -49,6 +52,15 @@ abstract class NotesDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS folders (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, createdAt INTEGER NOT NULL)"
+                )
+                database.execSQL("ALTER TABLE notes ADD COLUMN folderId INTEGER DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): NotesDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -56,7 +68,7 @@ abstract class NotesDatabase : RoomDatabase() {
                     NotesDatabase::class.java,
                     "notes_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 INSTANCE = instance
                 instance

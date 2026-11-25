@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -26,6 +27,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import com.example.notesapp.data.database.NotesDatabase
+import com.example.notesapp.data.model.FolderEntity
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.domain.repository.NoteRepository
 import com.example.notesapp.presentation.ui.ThemeMode
@@ -53,6 +55,10 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     val allNotes: StateFlow<List<NoteEntity>>
     val trashedNotes: StateFlow<List<NoteEntity>>
     val trashCount: StateFlow<Int>
+    val folders: StateFlow<List<FolderEntity>>
+    private val _activeFolderId = MutableStateFlow<Long?>(null)
+    val activeFolderId: StateFlow<Long?> = _activeFolderId
+    val notesInActiveFolder: StateFlow<List<NoteEntity>>
     val exportResult = MutableStateFlow<ExportResult?>(null)
     val importResult = MutableStateFlow<ImportResult?>(null)
 
@@ -69,7 +75,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val noteDao = NotesDatabase.getDatabase(application).noteDao()
-        repository = NoteRepository(noteDao)
+        repository = NoteRepository(noteDao, NotesDatabase.getDatabase(application).folderDao())
         allNotes = repository.allNotes.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -85,6 +91,18 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = 0
         )
+        folders = repository.folders.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+        notesInActiveFolder = combine(allNotes, _activeFolderId) { notes, folderId ->
+            if (folderId == null) notes else notes.filter { it.folderId == folderId }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
         val retentionDays = ThemePreferences.trashRetentionDays
         if (retentionDays > 0) {
             viewModelScope.launch(Dispatchers.IO) {
@@ -94,6 +112,44 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getRepository(): NoteRepository = repository
+
+    fun setActiveFolder(folderId: Long?) { _activeFolderId.value = folderId }
+
+    suspend fun createFolder(name: String): String? {
+        return createFolderWithId(name).second
+    }
+
+    suspend fun createFolderWithId(name: String): Pair<Long?, String?> {
+        val cleaned = name.trim()
+        validateFolderName(cleaned)?.let { return null to it }
+        if (repository.folderNameCount(cleaned) > 0) return null to "Nama folder sudah dipakai"
+        val folderId = repository.createFolder(FolderEntity(name = cleaned, createdAt = System.currentTimeMillis()))
+        _activeFolderId.value = folderId
+        return folderId to null
+    }
+
+    suspend fun renameFolder(id: Long, name: String): String? {
+        val cleaned = name.trim()
+        validateFolderName(cleaned)?.let { return it }
+        if (repository.folderNameCount(cleaned, id) > 0) return "Nama folder sudah dipakai"
+        repository.renameFolder(id, cleaned)
+        return null
+    }
+
+    suspend fun deleteFolder(id: Long) {
+        repository.deleteFolder(id)
+        if (_activeFolderId.value == id) _activeFolderId.value = null
+    }
+
+    suspend fun moveNotesToFolder(ids: List<Long>, targetFolderId: Long?) {
+        if (ids.isNotEmpty()) repository.moveNotesToFolder(ids, targetFolderId)
+    }
+
+    private fun validateFolderName(name: String): String? = when {
+        name.isBlank() -> "Nama folder tidak boleh kosong"
+        name.length > 24 -> "Nama folder maksimal 24 karakter"
+        else -> null
+    }
 
     fun setThemeMode(mode: ThemeMode) {
         ThemePreferences.setThemeMode(mode)
@@ -125,13 +181,14 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun addNoteAndReturn(title: String, content: String, color: Int, onResult: (NoteEntity) -> Unit) {
         viewModelScope.launch {
             val note = NoteEntity.create(title = title, content = content, color = color)
-            val id = repository.insertNote(note)
-            onResult(note.copy(id = id))
+                    val id = repository.insertNote(note.copy(folderId = _activeFolderId.value))
+                    onResult(note.copy(id = id, folderId = _activeFolderId.value))
         }
     }
 
     suspend fun insertNoteAndReturn(title: String, content: String, color: Int): NoteEntity {
         val note = NoteEntity.create(title = title, content = content, color = color)
+            .copy(folderId = _activeFolderId.value)
         val id = repository.insertNote(note)
         return note.copy(id = id)
     }

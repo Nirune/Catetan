@@ -8,9 +8,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -128,7 +130,8 @@ data class NoteListTopBarCallbacks(
     val onImport: () -> Unit,
     val onSelectAll: () -> Unit,
     val onExitSelection: () -> Unit,
-    val onDeleteSelected: () -> Unit
+    val onDeleteSelected: () -> Unit,
+    val onMoveSelected: () -> Unit
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,6 +143,7 @@ fun NoteListScreen(
     selectedNoteIds: List<Long>,
     onSelectionModeChange: (Boolean) -> Unit,
     onSelectionChange: (List<Long>) -> Unit,
+    onVisibleSelectionStats: (selected: Int, total: Int) -> Unit,
     onNoteClick: (NoteEntity) -> Unit = {},
     onAddClick: () -> Unit = {},
     onTopBarCallbacks: ((NoteListTopBarCallbacks) -> Unit)? = null,
@@ -151,15 +155,18 @@ fun NoteListScreen(
     onTrashClick: () -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
+    val folders by viewModel.folders.collectAsState()
+    val activeFolderId by viewModel.activeFolderId.collectAsState()
+    val folderNotes by viewModel.notesInActiveFolder.collectAsState()
     val sortOrder by viewModel.noteSortOrder.collectAsState()
-    val sortedNotes = remember(notes, sortOrder) { sortNotes(notes, sortOrder) }
+    val sortedNotes = remember(folderNotes, sortOrder) { sortNotes(folderNotes, sortOrder) }
     val themeName by viewModel.themeName.collectAsState()
     var showSingleExportDialog by remember { mutableStateOf(false) }
     var noteToExport by remember { mutableStateOf<NoteEntity?>(null) }
     var noteToDeleteId by rememberSaveable { mutableStateOf(-1L) }
-    val noteToDelete = sortedNotes.firstOrNull { it.id == noteToDeleteId }
+    val noteToDelete = notes.firstOrNull { it.id == noteToDeleteId }
     var notesToDeleteIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
-    val notesToDelete = sortedNotes.filter { notesToDeleteIds.contains(it.id) }
+    val notesToDelete = notes.filter { notesToDeleteIds.contains(it.id) }
     val exportResult by viewModel.exportResult.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -168,9 +175,18 @@ fun NoteListScreen(
     var showThemeDialog by remember { mutableStateOf(false) }
     val trashCount by viewModel.trashCount.collectAsState()
     var showSortDialog by remember { mutableStateOf(false) }
+    var folderDialogMode by remember { mutableStateOf<String?>(null) }
+    var folderTarget by remember { mutableStateOf<com.example.notesapp.data.model.FolderEntity?>(null) }
+    var folderNameDraft by remember { mutableStateOf("") }
+    var folderError by remember { mutableStateOf<String?>(null) }
+    var showDeleteFolderConfirmation by remember { mutableStateOf(false) }
 
     var showAllExportDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showMoveFolderDialog by remember { mutableStateOf(false) }
+    var showNewFolderForMoveDialog by remember { mutableStateOf(false) }
+    var newFolderForMoveName by remember { mutableStateOf("") }
+    var moveFolderError by remember { mutableStateOf<String?>(null) }
 
     fun isNoteSelected(note: NoteEntity): Boolean = selectedNoteIds.contains(note.id)
 
@@ -201,12 +217,13 @@ fun NoteListScreen(
     }
 
     fun toggleSelectAll() {
-        if (selectedNoteIds.size == notes.size && notes.isNotEmpty()) {
+        val visibleIds = sortedNotes.map { it.id }
+        if (visibleIds.isNotEmpty() && visibleIds.all { it in selectedNoteIds }) {
             onSelectionChange(emptyList())
             // Tetap di mode seleksi, counter 0 / N
         } else {
-            onSelectionChange(notes.map { it.id })
-            onSelectionModeChange(true)
+            onSelectionChange(visibleIds)
+            onSelectionModeChange(visibleIds.isNotEmpty())
         }
     }
 
@@ -222,31 +239,37 @@ fun NoteListScreen(
                     onSelectAll = { toggleSelectAll() },
                     onExitSelection = { exitSelectionMode() },
                     onDeleteSelected = {
-                        notesToDeleteIds = notes
-                            .filter { selectedNoteIds.contains(it.id) }
-                            .map { it.id }
-                        showDeleteConfirmation = true
-                    }
+                        val visibleIds = sortedNotes.map { it.id }.toSet()
+                        notesToDeleteIds = selectedNoteIds.filter { it in visibleIds }
+                        showDeleteConfirmation = notesToDeleteIds.isNotEmpty()
+                    },
+                    onMoveSelected = { showMoveFolderDialog = true }
                 )
             )
         }
     }
+
     provideTopBarCallbacks()
 
-    // Bersihkan id seleksi yang sudah tidak ada di daftar (contoh: setelah hapus)
-    LaunchedEffect(notes) {
-        val validIds = notes.map { it.id }.toSet()
-        val newSelection = selectedNoteIds.filter { validIds.contains(it) }
-        if (newSelection != selectedNoteIds) {
-            onSelectionChange(newSelection)
-        }
-        if (newSelection.isEmpty() && isSelectionMode) {
-            exitSelectionMode()
-        }
-        notesToDeleteIds = notesToDeleteIds.filter { validIds.contains(it) }
+    // Changing folder clears selection; selections are scoped to the visible folder.
+    LaunchedEffect(activeFolderId) {
+        if (isSelectionMode || selectedNoteIds.isNotEmpty()) exitSelectionMode()
+    }
+    LaunchedEffect(sortedNotes) {
+        val validIds = sortedNotes.map { it.id }.toSet()
+        val newSelection = selectedNoteIds.filter { it in validIds }
+        if (newSelection != selectedNoteIds) onSelectionChange(newSelection)
+        if (newSelection.isEmpty() && isSelectionMode) onSelectionModeChange(false)
+        notesToDeleteIds = notesToDeleteIds.filter { it in validIds }
         if (notesToDeleteIds.isEmpty()) {
             showDeleteConfirmation = false
         }
+    }
+
+    val currentVisibleSelectionCount = sortedNotes.count { it.id in selectedNoteIds }
+    val currentVisibleNoteCount = sortedNotes.size
+    SideEffect {
+        onVisibleSelectionStats(currentVisibleSelectionCount, currentVisibleNoteCount)
     }
 
     val themeMode by viewModel.themeMode.collectAsState()
@@ -570,6 +593,89 @@ fun NoteListScreen(
         )
     }
 
+    val selectedNotesForMove = notes.filter { selectedNoteIds.contains(it.id) && it.deletedAt == null }
+    val commonFolderId = selectedNotesForMove.map { it.folderId }.distinct().singleOrNull()
+    val commonFolderSelection = selectedNotesForMove.isNotEmpty() && selectedNotesForMove.map { it.folderId }.distinct().size == 1
+    val moveTargetFolderSnapshot = selectedNotesForMove
+
+    fun closeMoveDialog() {
+        showMoveFolderDialog = false
+    }
+
+    fun commitMove(targetFolderId: Long?, label: String) {
+        val ids = selectedNotesForMove.map { it.id }
+        scope.launch {
+            if (ids.isNotEmpty() && moveTargetFolderSnapshot.all { it.folderId != targetFolderId }) {
+                viewModel.moveNotesToFolder(ids, targetFolderId)
+            snackbarHostState.showSnackbar("${ids.size} catatan dipindahkan ke $label")
+            }
+            closeMoveDialog()
+            onSelectionChange(emptyList())
+            onSelectionModeChange(false)
+        }
+    }
+
+    if (showMoveFolderDialog) {
+        AlertDialog(
+            onDismissRequest = { closeMoveDialog() },
+            title = { Text("Pindahkan ke folder") },
+            text = {
+                Column {
+                    MoveFolderOption("Tanpa folder", commonFolderSelection && commonFolderId == null) {
+                        commitMove(null, "Tanpa folder")
+                    }
+                    folders.forEach { folder ->
+                        MoveFolderOption(folder.name, commonFolderSelection && commonFolderId == folder.id) {
+                            commitMove(folder.id, folder.name)
+                        }
+                    }
+                    MoveFolderOption("+ Folder baru", false) {
+                        closeMoveDialog()
+                        newFolderForMoveName = ""
+                        moveFolderError = null
+                        showNewFolderForMoveDialog = true
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { closeMoveDialog() }) { Text("Tutup") } }
+        )
+    }
+
+    if (showNewFolderForMoveDialog) {
+        AlertDialog(
+            onDismissRequest = { showNewFolderForMoveDialog = false; moveFolderError = null },
+            title = { Text("Folder baru") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newFolderForMoveName,
+                        onValueChange = { newFolderForMoveName = it; moveFolderError = null },
+                        singleLine = true,
+                        label = { Text("Nama folder") },
+                        supportingText = { Text("Maksimal 24 karakter") }
+                    )
+                    moveFolderError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        val (id, error) = viewModel.createFolderWithId(newFolderForMoveName)
+                        if (error != null) {
+                            moveFolderError = error
+                        } else if (id != null) {
+                            showNewFolderForMoveDialog = false
+                            commitMove(id, newFolderForMoveName.trim())
+                        }
+                    }
+                }) { Text("Buat dan pindahkan") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewFolderForMoveDialog = false; moveFolderError = null }) { Text("Batal") }
+            }
+        )
+    }
+
     // Delete confirmation dialog
         noteToDelete?.let { note ->
             AlertDialog(
@@ -615,7 +721,8 @@ fun NoteListScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val ids = notesToDeleteIds
+                        val visibleIds = sortedNotes.map { it.id }.toSet()
+                        val ids = notesToDeleteIds.filter { it in visibleIds }
                         viewModel.deleteNotesByIds(ids)
                         notesToDeleteIds = emptyList()
                         showDeleteConfirmation = false
@@ -642,33 +749,54 @@ fun NoteListScreen(
             exitSelectionMode()
         }
 
-        if (notes.isEmpty()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FolderFilterChip(
+                    label = "Semua",
+                    selected = activeFolderId == null,
+                    onClick = { viewModel.setActiveFolder(null) }
+                )
+                folders.forEach { folder ->
+                    FolderFilterChip(
+                        label = folder.name,
+                        selected = activeFolderId == folder.id,
+                        onClick = { viewModel.setActiveFolder(folder.id) },
+                        onLongClick = {
+                            folderTarget = folder
+                            folderNameDraft = folder.name
+                            folderDialogMode = "menu"
+                        }
+                    )
+                }
+                FolderFilterChip(label = "+", selected = false, onClick = {
+                    folderTarget = null
+                    folderNameDraft = ""
+                    folderError = null
+                    folderDialogMode = "create"
+                })
+            }
+
+        if (sortedNotes.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = DescriptionIcon,
-                        contentDescription = "Catatan kosong",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Belum ada catatan",
+                        text = if (activeFolderId != null) "Folder kosong" else "Belum ada catatan",
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Tap tombol '+' di bawah buat bikin!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        textAlign = TextAlign.Center
                     )
                 }
             }
         } else {
+            Box(modifier = Modifier.weight(1f)) {
             when (viewMode) {
                 ViewMode.LIST -> NoteListContent(
                     notes = sortedNotes,
@@ -701,7 +829,85 @@ fun NoteListScreen(
                     accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
                 )
             }
+            }
         }
+        }
+    }
+
+    if (folderDialogMode == "create" || folderDialogMode == "rename") {
+        val isRename = folderDialogMode == "rename"
+        AlertDialog(
+            onDismissRequest = { folderDialogMode = null; folderError = null },
+            title = { Text(if (isRename) "Ganti nama folder" else "Folder baru") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = folderNameDraft,
+                        onValueChange = { folderNameDraft = it; folderError = null },
+                        singleLine = true,
+                        label = { Text("Nama folder") },
+                        supportingText = { Text("Maksimal 24 karakter") }
+                    )
+                    folderError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        folderError = if (isRename) {
+                            folderTarget?.let { viewModel.renameFolder(it.id, folderNameDraft) }
+                        } else viewModel.createFolder(folderNameDraft)
+                        if (folderError == null) folderDialogMode = null
+                    }
+                }) { Text(if (isRename) "Simpan" else "Buat") }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderDialogMode = null; folderError = null }) { Text("Batal") }
+            }
+        )
+    }
+
+    if (folderDialogMode == "menu" && folderTarget != null) {
+        AlertDialog(
+            onDismissRequest = { folderDialogMode = null },
+            title = { Text(folderTarget!!.name) },
+            text = { Text("Pilih tindakan untuk folder ini.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    folderNameDraft = folderTarget!!.name
+                    folderError = null
+                    folderDialogMode = "rename"
+                }) { Text("Ganti nama") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showDeleteFolderConfirmation = true; folderDialogMode = null }) {
+                        Text("Hapus folder", color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(onClick = { folderDialogMode = null }) { Text("Tutup") }
+                }
+            }
+        )
+    }
+
+    if (showDeleteFolderConfirmation && folderTarget != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteFolderConfirmation = false; folderTarget = null },
+            title = { Text("Hapus folder?") },
+            text = {
+                Text("Hapus folder ${folderTarget!!.name}? Catatan di dalamnya tidak ikut terhapus dan akan menjadi tanpa folder.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { viewModel.deleteFolder(folderTarget!!.id) }
+                    showDeleteFolderConfirmation = false
+                    folderTarget = null
+                }) { Text("Hapus folder", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteFolderConfirmation = false; folderTarget = null }) { Text("Batal") }
+            }
+        )
     }
 }
 
@@ -1257,6 +1463,32 @@ private fun sortOrderLabel(order: NoteSortOrder): String = when (order) {
     NoteSortOrder.COLOR -> "Warna"
 }
 
+@Composable
+private fun FolderFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
+) {
+    Surface(
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        ),
+        shape = RoundedCornerShape(50),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 private fun sortNotes(notes: List<NoteEntity>, order: NoteSortOrder): List<NoteEntity> {
     val pinned = notes.filter { it.isPinned }
     val unpinned = notes.filterNot { it.isPinned }
@@ -1276,6 +1508,20 @@ private fun sortNotes(notes: List<NoteEntity>, order: NoteSortOrder): List<NoteE
         }
     }
     return pinned.sortedWith(comparator) + unpinned.sortedWith(comparator)
+}
+
+@Composable
+private fun MoveFolderOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label, color = MaterialTheme.colorScheme.onSurface)
+    }
 }
 
 @Composable

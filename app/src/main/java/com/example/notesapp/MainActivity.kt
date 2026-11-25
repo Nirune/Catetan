@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
@@ -155,6 +156,8 @@ fun NotesAppNavigation(
     var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedNoteIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    var visibleSelectedCount by remember { mutableStateOf(0) }
+    var visibleNoteCount by remember { mutableStateOf(noteViewModel.allNotes.value.size) }
     var showTodoAddDialog by remember { mutableStateOf(false) }
     var exportClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     var settingsClick by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -162,6 +165,7 @@ fun NotesAppNavigation(
     var selectAllClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     var exitSelectionClick by remember { mutableStateOf<(() -> Unit)?>(null) }
     var deleteSelectedClick by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var moveSelectedClick by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     val themeName by noteViewModel.themeName.collectAsState()
 
@@ -179,11 +183,12 @@ fun NotesAppNavigation(
             when (navController.currentBackStackEntryAsState().value?.destination?.route) {
                 "notes" -> NotesTopBar(
                     isSelectionMode = isSelectionMode,
-                    selectedCount = selectedNoteIds.size,
-                    totalCount = noteViewModel.allNotes.value.size,
+                    selectedCount = visibleSelectedCount,
+                    totalCount = visibleNoteCount,
                     onExitSelection = { exitSelectionClick?.invoke() },
                     onSelectAll = { selectAllClick?.invoke() },
                     onDeleteSelected = { deleteSelectedClick?.invoke() },
+                    onMoveSelected = { moveSelectedClick?.invoke() },
                     onExportClick = { exportClick?.invoke() },
                     onImportClick = { importClick?.invoke() },
                     onSettingsClick = { settingsClick?.invoke() },
@@ -299,6 +304,10 @@ fun NotesAppNavigation(
                     selectedNoteIds = selectedNoteIds,
                     onSelectionModeChange = { isSelectionMode = it },
                     onSelectionChange = { selectedNoteIds = it },
+                    onVisibleSelectionStats = { selected, total ->
+                        visibleSelectedCount = selected
+                        visibleNoteCount = total
+                    },
                     onNoteClick = { note ->
                         editingNote = note
                         navController.navigate("add_edit")
@@ -314,6 +323,7 @@ fun NotesAppNavigation(
                         selectAllClick = callbacks.onSelectAll
                         exitSelectionClick = callbacks.onExitSelection
                         deleteSelectedClick = callbacks.onDeleteSelected
+                        moveSelectedClick = callbacks.onMoveSelected
                     },
                     onThemeModeChanged = onThemeModeChanged,
                     onAppearanceClick = { navController.navigate("appearance") },
@@ -385,6 +395,7 @@ fun NotesTopBar(
     onExitSelection: () -> Unit,
     onSelectAll: () -> Unit,
     onDeleteSelected: () -> Unit,
+    onMoveSelected: () -> Unit,
     onExportClick: () -> Unit,
     onImportClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -421,6 +432,13 @@ fun NotesTopBar(
                         contentDescription = if (allSelected) "Batalkan semua" else "Pilih semua",
                         tint = if (allSelected) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                IconButton(onClick = onMoveSelected) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = "Pindahkan ke folder",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
                 IconButton(onClick = onDeleteSelected) {
