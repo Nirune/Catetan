@@ -1,5 +1,8 @@
 package com.example.notesapp.presentation.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -143,7 +146,8 @@ fun NoteListScreen(
     onAppearanceClick: () -> Unit,
     themeName: String,
     onPickFile: () -> Unit = {},
-    onPickFolder: () -> Unit = {}
+    onPickFolder: () -> Unit = {},
+    onTrashClick: () -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
     val themeName by viewModel.themeName.collectAsState()
@@ -159,6 +163,7 @@ fun NoteListScreen(
     val scope = rememberCoroutineScope()
 
     var showThemeDialog by remember { mutableStateOf(false) }
+    val trashCount by viewModel.trashCount.collectAsState()
 
     var showAllExportDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -305,7 +310,10 @@ fun NoteListScreen(
             title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Path export section
@@ -468,9 +476,6 @@ fun NoteListScreen(
                         )
                     }
 
-                    Divider(
-                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
-                    )
                 }
             },
             confirmButton = {
@@ -506,16 +511,16 @@ fun NoteListScreen(
     }
 
     // Delete confirmation dialog
-    noteToDelete?.let { note ->
-        AlertDialog(
-            onDismissRequest = { noteToDeleteId = -1L },
-            title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "Catatan \"${note.title.ifBlank { "Catatan tanpa judul" }}\" " +
-                        "akan dihapus permanen.\n\nLanjutkan?"
-                )
-            },
+        noteToDelete?.let { note ->
+            AlertDialog(
+                onDismissRequest = { noteToDeleteId = -1L },
+                title = { Text("Pindahkan ke Sampah", fontWeight = FontWeight.Bold) },
+                text = {
+                    Text(
+                        "Catatan \"${note.title.ifBlank { note.content.lineSequence().firstOrNull().orEmpty().ifBlank { "Catatan tanpa judul" } }}\" akan dipindahkan ke Sampah. " +
+                            if (note.isPinned) "Bintangnya akan dilepas." else ""
+                    )
+                },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -523,7 +528,7 @@ fun NoteListScreen(
                         noteToDeleteId = -1L
                     }
                 ) {
-                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                    Text("Pindahkan", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -538,10 +543,10 @@ fun NoteListScreen(
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text("Hapus Catatan", fontWeight = FontWeight.Bold) },
+                title = { Text("Pindahkan ke Sampah", fontWeight = FontWeight.Bold) },
             text = {
                 val pinnedCount = notesToDelete.count { it.isPinned }
-                val base = "Catatan ${notesToDelete.size} akan dihapus permanen.\n\nLanjutkan?"
+                    val base = "Catatan ${notesToDelete.size} akan dipindahkan ke Sampah."
                 val warning = if (pinnedCount > 0) {
                     "\n\n${pinnedCount} di antaranya berbintang."
                 } else ""
@@ -557,7 +562,7 @@ fun NoteListScreen(
                         exitSelectionMode()
                     }
                 ) {
-                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                    Text("Pindahkan", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -656,7 +661,7 @@ private fun NoteListContent(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(notes) { note ->
@@ -703,7 +708,7 @@ private fun NoteGridContent(
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 160.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -795,6 +800,7 @@ fun NoteItem(
     onPinToggle: () -> Unit,
     onExport: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val displayTitle = remember(note.title, note.content) {
         if (note.title.isNotBlank()) note.title
         else note.content.take(50).substringBefore('\n').trim()
@@ -802,7 +808,7 @@ fun NoteItem(
     }
 
     val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content.take(240).trim()
+        if (note.title.isNotBlank()) note.content.replace(Regex("\\n{2,}"), "\n").trim().take(240)
         else ""
     }
 
@@ -903,8 +909,30 @@ fun NoteItem(
                                 tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = onExport ?: {}) {
-                            Icon(Icons.Filled.Share, contentDescription = "Ekspor", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        var shareMenuExpanded by remember(note.id) { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { shareMenuExpanded = true }) {
+                                Icon(Icons.Filled.Share, contentDescription = "Bagikan", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            DropdownMenu(
+                                expanded = shareMenuExpanded,
+                                onDismissRequest = { shareMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Bagikan teks") },
+                                    onClick = {
+                                        shareMenuExpanded = false
+                                        shareNoteText(context, note)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Simpan sebagai file…") },
+                                    onClick = {
+                                        shareMenuExpanded = false
+                                        onExport?.invoke()
+                                    }
+                                )
+                            }
                         }
                         IconButton(onClick = onDelete) {
                             Icon(Icons.Filled.Delete, contentDescription = "Hapus", tint = MaterialTheme.colorScheme.error)
@@ -937,6 +965,7 @@ fun NoteCardGrid(
     onPinToggle: () -> Unit,
     onExport: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val iconButtonSize = 36.dp
     val displayTitle = remember(note.title, note.content) {
         if (note.title.isNotBlank()) note.title
@@ -945,7 +974,7 @@ fun NoteCardGrid(
     }
 
     val previewText = remember(note.title, note.content) {
-        if (note.title.isNotBlank()) note.content.take(240).trim()
+        if (note.title.isNotBlank()) note.content.replace(Regex("\\n{2,}"), "\n").trim().take(240)
         else ""
     }
 
@@ -1042,16 +1071,38 @@ fun NoteCardGrid(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(
-                        onClick = onExport ?: {},
-                        modifier = Modifier.size(iconButtonSize)
-                    ) {
-                        Icon(
-                            Icons.Filled.Share,
-                            contentDescription = "Ekspor",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
+                    var shareMenuExpanded by remember(note.id) { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { shareMenuExpanded = true },
+                            modifier = Modifier.size(iconButtonSize)
+                        ) {
+                            Icon(
+                                Icons.Filled.Share,
+                                contentDescription = "Bagikan",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = shareMenuExpanded,
+                            onDismissRequest = { shareMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Bagikan teks") },
+                                onClick = {
+                                    shareMenuExpanded = false
+                                    shareNoteText(context, note)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Simpan sebagai file…") },
+                                onClick = {
+                                    shareMenuExpanded = false
+                                    onExport?.invoke()
+                                }
+                            )
+                        }
                     }
                     IconButton(
                         onClick = onDelete,
@@ -1067,6 +1118,28 @@ fun NoteCardGrid(
                 }
             }
         }
+    }
+}
+
+private fun shareNoteText(context: android.content.Context, note: NoteEntity) {
+    val shareText = if (note.title.isBlank()) note.content else "${note.title}\n\n${note.content}"
+    if (shareText.length > 100_000) {
+        Toast.makeText(
+            context,
+            "Catatan terlalu panjang untuk dibagikan sebagai teks, gunakan Simpan sebagai file",
+            Toast.LENGTH_LONG
+        ).show()
+        return
+    }
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, note.title)
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    try {
+        context.startActivity(Intent.createChooser(sendIntent, "Bagikan catatan"))
+    } catch (e: ActivityNotFoundException) {
+        Toast.makeText(context, "Tidak ada aplikasi untuk membagikan teks", Toast.LENGTH_SHORT).show()
     }
 }
 
