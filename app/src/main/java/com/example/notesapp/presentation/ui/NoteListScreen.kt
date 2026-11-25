@@ -348,6 +348,50 @@ fun NoteListScreen(
                         modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
                     )
 
+                    Text(
+                        text = "Data",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = {
+                                showThemeDialog = false
+                                onTrashClick()
+                            })
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Sampah",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                text = "›",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = if (trashCount == 0) "Sampah kosong" else "$trashCount catatan",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Divider(
+                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
+                    )
+
                     // Tampilan section
                     Text(
                         text = stringResource(R.string.view_mode),
