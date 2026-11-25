@@ -103,7 +103,7 @@ fun SearchScreen(
             // History when query is empty
             if (searchQuery.trim().isEmpty() && searchHistory.isNotEmpty()) {
                 SearchHistoryList(
-                    history = searchHistory,
+                        history = searchHistory,
                     onHistoryClick = { query ->
                         searchViewModel.searchQuery.value = query
                         searchViewModel.onSearchSubmit(query)

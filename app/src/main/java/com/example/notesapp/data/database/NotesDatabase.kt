@@ -11,7 +11,7 @@ import com.example.notesapp.data.dao.TodoDao
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.data.model.TodoEntity
 
-@Database(entities = [NoteEntity::class, TodoEntity::class], version = 3, exportSchema = false)
+@Database(entities = [NoteEntity::class, TodoEntity::class], version = 4, exportSchema = false)
 abstract class NotesDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun todoDao(): TodoDao
@@ -43,6 +43,12 @@ abstract class NotesDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE notes ADD COLUMN deletedAt INTEGER DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): NotesDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -50,7 +56,7 @@ abstract class NotesDatabase : RoomDatabase() {
                     NotesDatabase::class.java,
                     "notes_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 INSTANCE = instance
                 instance

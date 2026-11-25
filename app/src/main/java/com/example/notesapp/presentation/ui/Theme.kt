@@ -25,6 +25,7 @@ object ThemePreferences {
     private const val KEY_THEME_LEGACY = "theme"
     private const val KEY_EXPORT_PATH_URI = "export_path_uri"
     private const val KEY_VIEW_MODE = "view_mode"
+    private const val KEY_TRASH_RETENTION_DAYS = "trash_retention_days"
 
     private var prefs: SharedPreferences? = null
 
@@ -103,6 +104,14 @@ object ThemePreferences {
             ViewMode.GRID -> 1
         }
         prefs?.edit()?.putInt(KEY_VIEW_MODE, value)?.apply()
+    }
+
+    val trashRetentionDays: Int
+        get() = prefs?.getInt(KEY_TRASH_RETENTION_DAYS, 30) ?: 30
+
+    fun setTrashRetentionDays(days: Int) {
+        require(days in setOf(7, 14, 30, 60, 0))
+        prefs?.edit()?.putInt(KEY_TRASH_RETENTION_DAYS, days)?.apply()
     }
 }
 

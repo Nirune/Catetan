@@ -61,6 +61,7 @@ import com.example.notesapp.presentation.ui.NoteListScreen
 import com.example.notesapp.presentation.ui.NoteListTopBarCallbacks
 import com.example.notesapp.presentation.ui.SearchScreen
 import com.example.notesapp.presentation.ui.TodoScreen
+import com.example.notesapp.presentation.ui.TrashScreen
 import com.example.notesapp.presentation.ui.ThemeMode
 import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.ui.SelectAllIcon
@@ -318,7 +319,8 @@ fun NotesAppNavigation(
                     onAppearanceClick = { navController.navigate("appearance") },
                     themeName = themeName,
                     onPickFile = onPickFile,
-                    onPickFolder = onPickFolder
+                    onPickFolder = onPickFolder,
+                    onTrashClick = { navController.navigate("trash") }
                 )
             }
             composable("todo") {
@@ -355,6 +357,13 @@ fun NotesAppNavigation(
                     onBack = {
                         navController.popBackStack()
                     }
+                )
+            }
+            composable("trash") {
+                TrashScreen(
+                    viewModel = noteViewModel,
+                    modifier = Modifier.padding(innerPadding),
+                    onBack = { navController.popBackStack() }
                 )
             }
         }

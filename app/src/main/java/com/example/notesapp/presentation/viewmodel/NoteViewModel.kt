@@ -50,6 +50,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: NoteRepository
 
     val allNotes: StateFlow<List<NoteEntity>>
+    val trashedNotes: StateFlow<List<NoteEntity>>
+    val trashCount: StateFlow<Int>
     val exportResult = MutableStateFlow<ExportResult?>(null)
     val importResult = MutableStateFlow<ImportResult?>(null)
 
@@ -70,6 +72,22 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+        trashedNotes = repository.trashedNotes.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+        trashCount = repository.trashCount.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0
+        )
+        val retentionDays = ThemePreferences.trashRetentionDays
+        if (retentionDays > 0) {
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.purgeTrashBefore(System.currentTimeMillis() - retentionDays * 24L * 60L * 60L * 1000L)
+            }
+        }
     }
 
     fun getRepository(): NoteRepository = repository
@@ -119,15 +137,32 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteNote(note: NoteEntity) {
         viewModelScope.launch {
-            repository.deleteNote(note)
+            repository.moveToTrash(note)
         }
     }
 
     fun deleteNotesByIds(ids: List<Long>) {
         viewModelScope.launch {
-            repository.deleteNotesByIds(ids)
+            repository.moveToTrashByIds(ids)
         }
     }
+
+    fun restoreNote(id: Long) {
+        viewModelScope.launch { repository.restoreNote(id) }
+    }
+
+    fun permanentlyDeleteNote(id: Long) {
+        viewModelScope.launch { repository.permanentlyDeleteNote(id) }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch { repository.emptyTrash() }
+    }
+
+    fun setTrashRetentionDays(days: Int) {
+        ThemePreferences.setTrashRetentionDays(days)
+    }
+
 
     fun togglePin(id: Long) {
         viewModelScope.launch {
@@ -151,7 +186,14 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun exportSingleNote(note: NoteEntity, format: ExportFormat) {
-        exportNotesInternal(listOf(note), format, isSingle = true)
+        viewModelScope.launch(Dispatchers.IO) {
+            val activeNote = repository.getActiveNoteForExport(note.id)
+            if (activeNote == null) {
+                exportResult.value = ExportResult.Error("Catatan sudah berada di Sampah")
+            } else {
+                exportNotesInternal(listOf(activeNote), format, isSingle = true)
+            }
+        }
     }
 
     fun exportAllNotes(format: ExportFormat) {

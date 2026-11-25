@@ -12,7 +12,8 @@ data class NoteEntity(
     val createdAt: Long = Instant.now().toEpochMilli(),
     val updatedAt: Long = Instant.now().toEpochMilli(),
     val isPinned: Boolean = false,
-    val color: Int = 0xFFFFFFFF.toInt() // White default
+    val color: Int = 0xFFFFFFFF.toInt(), // White default
+    val deletedAt: Long? = null
 ) {
     companion object {
         fun create(title: String, content: String, color: Int = 0xFFFFFFFF.toInt()): NoteEntity {
