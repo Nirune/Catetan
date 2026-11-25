@@ -18,6 +18,10 @@ enum class ViewMode {
     LIST, GRID
 }
 
+enum class NoteSortOrder {
+    NEWEST_CREATED, OLDEST_CREATED, LAST_MODIFIED, TITLE_ASC, COLOR
+}
+
 object ThemePreferences {
     private const val PREFS_NAME = "catetan_prefs"
     private const val KEY_THEME_MODE = "theme_mode"
@@ -26,6 +30,7 @@ object ThemePreferences {
     private const val KEY_EXPORT_PATH_URI = "export_path_uri"
     private const val KEY_VIEW_MODE = "view_mode"
     private const val KEY_TRASH_RETENTION_DAYS = "trash_retention_days"
+    private const val KEY_NOTE_SORT_ORDER = "note_sort_order"
 
     private var prefs: SharedPreferences? = null
 
@@ -104,6 +109,17 @@ object ThemePreferences {
             ViewMode.GRID -> 1
         }
         prefs?.edit()?.putInt(KEY_VIEW_MODE, value)?.apply()
+    }
+
+    val noteSortOrder: NoteSortOrder
+        get() {
+            val value = prefs?.getString(KEY_NOTE_SORT_ORDER, null)
+            return runCatching { value?.let(NoteSortOrder::valueOf) ?: NoteSortOrder.LAST_MODIFIED }
+                .getOrDefault(NoteSortOrder.LAST_MODIFIED)
+        }
+
+    fun setNoteSortOrder(order: NoteSortOrder) {
+        prefs?.edit()?.putString(KEY_NOTE_SORT_ORDER, order.name)?.apply()
     }
 
     val trashRetentionDays: Int

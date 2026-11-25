@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.presentation.ui.ThemeMode
+import com.example.notesapp.presentation.ui.NoteSortOrder
 import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.ui.themeModeLabel
 import com.example.notesapp.presentation.ui.themePalette
@@ -150,13 +151,15 @@ fun NoteListScreen(
     onTrashClick: () -> Unit = {}
 ) {
     val notes by viewModel.allNotes.collectAsState()
+    val sortOrder by viewModel.noteSortOrder.collectAsState()
+    val sortedNotes = remember(notes, sortOrder) { sortNotes(notes, sortOrder) }
     val themeName by viewModel.themeName.collectAsState()
     var showSingleExportDialog by remember { mutableStateOf(false) }
     var noteToExport by remember { mutableStateOf<NoteEntity?>(null) }
     var noteToDeleteId by rememberSaveable { mutableStateOf(-1L) }
-    val noteToDelete = notes.firstOrNull { it.id == noteToDeleteId }
+    val noteToDelete = sortedNotes.firstOrNull { it.id == noteToDeleteId }
     var notesToDeleteIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
-    val notesToDelete = notes.filter { notesToDeleteIds.contains(it.id) }
+    val notesToDelete = sortedNotes.filter { notesToDeleteIds.contains(it.id) }
     val exportResult by viewModel.exportResult.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -164,6 +167,7 @@ fun NoteListScreen(
 
     var showThemeDialog by remember { mutableStateOf(false) }
     val trashCount by viewModel.trashCount.collectAsState()
+    var showSortDialog by remember { mutableStateOf(false) }
 
     var showAllExportDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -437,6 +441,27 @@ fun NoteListScreen(
                         )
                     }
 
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = { showSortDialog = true })
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Urutkan", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text("›", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(
+                            text = sortOrderLabel(sortOrder),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     Divider(
                         modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp)
                     )
@@ -480,6 +505,41 @@ fun NoteListScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showThemeDialog = false }) { Text(stringResource(R.string.close)) }
+            }
+        )
+    }
+
+    if (showSortDialog) {
+        AlertDialog(
+            onDismissRequest = { showSortDialog = false },
+            title = { Text("Urutkan catatan") },
+            text = {
+                Column {
+                    NoteSortOrder.entries.forEach { option ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clickable {
+                                    viewModel.setNoteSortOrder(option)
+                                    showSortDialog = false
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = sortOrder == option,
+                                onClick = {
+                                    viewModel.setNoteSortOrder(option)
+                                    showSortDialog = false
+                                }
+                            )
+                            Text(sortOrderLabel(option), color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSortDialog = false }) { Text("Tutup") }
             }
         )
     }
@@ -611,7 +671,7 @@ fun NoteListScreen(
         } else {
             when (viewMode) {
                 ViewMode.LIST -> NoteListContent(
-                    notes = notes,
+                    notes = sortedNotes,
                     isSelectionMode = isSelectionMode,
                     selectedNoteIds = selectedNoteIds,
                     onNoteClick = onNoteClick,
@@ -626,7 +686,7 @@ fun NoteListScreen(
                     accentColorProvider = { note -> NoteColorMapper.getNoteAccentColorNonComposable(note.color, isDark) }
                 )
                 ViewMode.GRID -> NoteGridContent(
-                    notes = notes,
+                    notes = sortedNotes,
                     isSelectionMode = isSelectionMode,
                     selectedNoteIds = selectedNoteIds,
                     onNoteClick = onNoteClick,
@@ -1187,6 +1247,35 @@ fun Modifier.noteCardGesturesModifier(
             }
         )
     })
+}
+
+private fun sortOrderLabel(order: NoteSortOrder): String = when (order) {
+    NoteSortOrder.NEWEST_CREATED -> "Terbaru dibuat"
+    NoteSortOrder.OLDEST_CREATED -> "Terlama dibuat"
+    NoteSortOrder.LAST_MODIFIED -> "Terakhir diubah"
+    NoteSortOrder.TITLE_ASC -> "Abjad (A-Z)"
+    NoteSortOrder.COLOR -> "Warna"
+}
+
+private fun sortNotes(notes: List<NoteEntity>, order: NoteSortOrder): List<NoteEntity> {
+    val pinned = notes.filter { it.isPinned }
+    val unpinned = notes.filterNot { it.isPinned }
+    val comparator = when (order) {
+        NoteSortOrder.NEWEST_CREATED -> compareByDescending<NoteEntity> { it.createdAt }
+            .thenByDescending { it.updatedAt }
+        NoteSortOrder.OLDEST_CREATED -> compareBy<NoteEntity> { it.createdAt }
+            .thenByDescending { it.updatedAt }
+        NoteSortOrder.LAST_MODIFIED -> compareByDescending<NoteEntity> { it.updatedAt }
+        NoteSortOrder.TITLE_ASC -> compareBy<NoteEntity> { it.title.isBlank() }
+            .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+            .thenByDescending { it.updatedAt }
+        NoteSortOrder.COLOR -> {
+            val colorOrder = NoteColorMapper.allNoteColors.withIndex().associate { it.value to it.index }
+            compareBy<NoteEntity> { colorOrder[it.color] ?: Int.MAX_VALUE }
+                .thenByDescending { it.updatedAt }
+        }
+    }
+    return pinned.sortedWith(comparator) + unpinned.sortedWith(comparator)
 }
 
 @Composable

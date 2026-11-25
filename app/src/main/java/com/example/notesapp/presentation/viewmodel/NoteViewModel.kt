@@ -29,6 +29,7 @@ import com.example.notesapp.data.database.NotesDatabase
 import com.example.notesapp.data.model.NoteEntity
 import com.example.notesapp.domain.repository.NoteRepository
 import com.example.notesapp.presentation.ui.ThemeMode
+import com.example.notesapp.presentation.ui.NoteSortOrder
 import com.example.notesapp.presentation.ui.ThemePreferences
 import com.example.notesapp.presentation.ui.ViewMode
 
@@ -63,6 +64,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _viewMode = MutableStateFlow(ThemePreferences.viewMode)
     val viewMode: StateFlow<ViewMode> = _viewMode
+    private val _noteSortOrder = MutableStateFlow(ThemePreferences.noteSortOrder)
+    val noteSortOrder: StateFlow<NoteSortOrder> = _noteSortOrder
 
     init {
         val noteDao = NotesDatabase.getDatabase(application).noteDao()
@@ -105,6 +108,11 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun setViewMode(mode: ViewMode) {
         ThemePreferences.setViewMode(mode)
         _viewMode.value = mode
+    }
+
+    fun setNoteSortOrder(order: NoteSortOrder) {
+        ThemePreferences.setNoteSortOrder(order)
+        _noteSortOrder.value = order
     }
 
     fun addNote(title: String, content: String, color: Int = 0xFFFFF9C4.toInt()) {
