@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarOutline
@@ -174,6 +175,7 @@ fun NoteListScreen(
     val notes by viewModel.allNotes.collectAsState()
     val folders by viewModel.folders.collectAsState()
     val activeFolderId by viewModel.activeFolderId.collectAsState()
+    val folderNamesById = remember(folders) { folders.associate { it.id to it.name } }
     val folderNotes by viewModel.notesInActiveFolder.collectAsState()
     val sortOrder by viewModel.noteSortOrder.collectAsState()
     val sortedNotes = remember(folderNotes, sortOrder) { sortNotes(folderNotes, sortOrder) }
@@ -877,6 +879,7 @@ fun NoteListScreen(
                         when (viewMode) {
                             ViewMode.LIST -> NoteListContent(
                                 notes = displayedNotes,
+                                folderNamesById = folderNamesById.takeIf { displayedFolderId == null }.orEmpty(),
                                 isSelectionMode = isSelectionMode,
                                 selectedNoteIds = selectedNoteIds,
                                 onNoteClick = onNoteClick,
@@ -892,6 +895,7 @@ fun NoteListScreen(
                             )
                             ViewMode.GRID -> NoteGridContent(
                                 notes = displayedNotes,
+                                folderNamesById = folderNamesById.takeIf { displayedFolderId == null }.orEmpty(),
                                 isSelectionMode = isSelectionMode,
                                 selectedNoteIds = selectedNoteIds,
                                 onNoteClick = onNoteClick,
@@ -1002,6 +1006,7 @@ fun NoteListScreen(
 @Composable
 private fun NoteListContent(
     notes: List<NoteEntity>,
+    folderNamesById: Map<Long, String>,
     isSelectionMode: Boolean,
     selectedNoteIds: List<Long>,
     onNoteClick: (NoteEntity) -> Unit,
@@ -1030,6 +1035,7 @@ private fun NoteListContent(
             ) {
                 NoteItem(
                     note = note,
+                    folderName = note.folderId?.let(folderNamesById::get),
                     isSelected = isSelected,
                     isSelectionMode = isSelectionMode,
                     onClick = { onNoteClick(note) },
@@ -1048,6 +1054,7 @@ private fun NoteListContent(
 @Composable
 private fun NoteGridContent(
     notes: List<NoteEntity>,
+    folderNamesById: Map<Long, String>,
     isSelectionMode: Boolean,
     selectedNoteIds: List<Long>,
     onNoteClick: (NoteEntity) -> Unit,
@@ -1078,6 +1085,7 @@ private fun NoteGridContent(
             ) {
                 NoteCardGrid(
                     note = note,
+                    folderName = note.folderId?.let(folderNamesById::get),
                     isSelected = isSelected,
                     isSelectionMode = isSelectionMode,
                     onClick = { onNoteClick(note) },
@@ -1144,6 +1152,7 @@ fun NoteCardSurface(
 @Composable
 fun NoteItem(
     note: NoteEntity,
+    folderName: String? = null,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     onClick: () -> Unit,
@@ -1203,13 +1212,28 @@ fun NoteItem(
                 .heightIn(min = 0.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Judul max 2 baris
-            Text(
-                text = displayTitle,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val titleRowMaxWidth = this.maxWidth
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = displayTitle,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (folderName != null) {
+                        FolderNameLabel(
+                            name = folderName,
+                            modifier = Modifier.widthIn(max = titleRowMaxWidth * 0.4f)
+                        )
+                    }
+                }
+            }
 
             // Pratinjau max 3 baris
             if (previewText.isNotBlank()) {
@@ -1309,6 +1333,7 @@ fun NoteItem(
 @Composable
 fun NoteCardGrid(
     note: NoteEntity,
+    folderName: String? = null,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     onClick: () -> Unit,
@@ -1360,6 +1385,10 @@ fun NoteCardGrid(
                     .background(accentColor)
             )
 
+            if (folderName != null) {
+                FolderNameLabel(name = folderName, modifier = Modifier.fillMaxWidth())
+            }
+
             // 2. Judul max 2 baris
             Text(
                 text = displayTitle,
@@ -1376,7 +1405,7 @@ fun NoteCardGrid(
                 Text(
                     text = previewText,
                     fontSize = 13.sp,
-                    maxLines = 3,
+                    maxLines = if (folderName != null) 2 else 3,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1471,6 +1500,32 @@ fun NoteCardGrid(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FolderNameLabel(name: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Folder,
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = name,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
