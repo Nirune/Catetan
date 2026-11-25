@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +42,7 @@ sealed interface ExportResult {
 }
 
 sealed interface ImportResult {
-    data class Success(val importedCount: Int) : ImportResult
+    data class Success(val importedCount: Int, val createdFolderCount: Int = 0) : ImportResult
     data class Error(val message: String) : ImportResult
 }
 
@@ -128,6 +129,20 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         return folderId to null
     }
 
+    suspend fun exportFolder(folderId: Long) {
+        val folder = repository.folders.first().firstOrNull { it.id == folderId }
+            ?: run {
+                exportResult.value = ExportResult.Error("Folder tidak ditemukan")
+                return
+            }
+        val folderNotes = repository.getNotesInFolder(folderId).first()
+        if (folderNotes.isEmpty()) {
+            exportResult.value = ExportResult.Error("Folder kosong, tidak ada yang diekspor")
+            return
+        }
+        exportCtnNotes(folderNotes, listOf(folder))
+    }
+
     suspend fun renameFolder(id: Long, name: String): String? {
         val cleaned = name.trim()
         validateFolderName(cleaned)?.let { return it }
@@ -137,8 +152,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun deleteFolder(id: Long) {
-        repository.deleteFolder(id)
         if (_activeFolderId.value == id) _activeFolderId.value = null
+        repository.deleteFolder(id)
     }
 
     suspend fun moveNotesToFolder(ids: List<Long>, targetFolderId: Long?) {
@@ -256,13 +271,33 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             if (activeNote == null) {
                 exportResult.value = ExportResult.Error("Catatan sudah berada di Sampah")
             } else {
-                exportNotesInternal(listOf(activeNote), format, isSingle = true)
+        exportNotesInternal(listOf(activeNote), format, isSingle = true)
             }
         }
     }
 
     fun exportAllNotes(format: ExportFormat) {
         exportNotesInternal(emptyList(), format, isSingle = false)
+    }
+
+    fun exportAllCtn() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val notes = repository.getAllNotesForExport()
+                if (notes.isEmpty()) {
+                    exportResult.value = ExportResult.Error("Tidak ada catatan untuk diekspor")
+                    return@launch
+                }
+                val allFolders = repository.folders.first()
+                val content = exportToCtn(notes, allFolders)
+                val fileName = buildCtnFileName(null)
+                val destination = saveToCatetanFolder(content, fileName, "application/x-catetan")
+                exportResult.value = ExportResult.Success(fileName, destination)
+            } catch (e: Exception) {
+                Log.e("Export", "CTN export failed", e)
+                exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
+            }
+        }
     }
 
     /**
@@ -279,6 +314,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
                 val fileName = getFileNameFromUri(resolver, uri) ?: "unknown"
                 val extension = fileName.substringAfterLast('.').lowercase()
+                lastImportNewFolderCount = 0
 
                 val importedCount = when (extension) {
                     "ctn" -> importCtn(content)
@@ -288,7 +324,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                     else -> throw IllegalArgumentException("Format file tidak didukung: .$extension")
                 }
 
-                importResult.value = ImportResult.Success(importedCount)
+                importResult.value = ImportResult.Success(importedCount, lastImportNewFolderCount)
             } catch (e: Exception) {
                 importResult.value = ImportResult.Error("Gagal impor: ${e.message}")
             }
@@ -308,10 +344,40 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
      * Impor semua catatan dari format .ctn (JSON Catetan).
      */
     private suspend fun importCtn(content: String): Int {
+        lastImportNewFolderCount = 0
         val json = Json { ignoreUnknownKeys = true }
         val ctnExport = json.decodeFromString<CtnExport>(content)
+        val folderNameToId = mutableMapOf<String, Long>()
+        var createdFolderCount = 0
+        val fileFolderNames = (ctnExport.folders.orEmpty() + ctnExport.notes.mapNotNull { it.folder })
+            .map { it.trim().take(24) }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(java.util.Locale.ROOT) }
+        val existingFolders = repository.folders.first()
+        fileFolderNames.forEach { name ->
+            val existing = existingFolders.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            if (existing != null) {
+                folderNameToId[name.lowercase(java.util.Locale.ROOT)] = existing.id
+            } else {
+                val id = repository.createFolder(FolderEntity(name = name, createdAt = System.currentTimeMillis()))
+                folderNameToId[name.lowercase(java.util.Locale.ROOT)] = id
+                createdFolderCount++
+            }
+        }
         var count = 0
+        var perNoteFolderCount = 0
         ctnExport.notes.forEach { ctnNote ->
+            val folderKey = ctnNote.folder?.trim()?.take(24)?.lowercase(java.util.Locale.ROOT)
+            if (!folderKey.isNullOrBlank() && folderKey !in folderNameToId) {
+                val existing = repository.folders.first().firstOrNull { it.name.equals(folderKey, ignoreCase = true) }
+                if (existing != null) {
+                    folderNameToId[folderKey] = existing.id
+                } else {
+                    val newId = repository.createFolder(FolderEntity(name = folderKey, createdAt = System.currentTimeMillis()))
+                    folderNameToId[folderKey] = newId
+                    perNoteFolderCount++
+                }
+            }
             val note = NoteEntity(
                 id = 0, // biarkan Room generate id baru
                 title = ctnNote.title,
@@ -319,12 +385,25 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 createdAt = ctnNote.createdAt ?: ctnNote.updatedAt,
                 updatedAt = ctnNote.updatedAt,
                 isPinned = ctnNote.isPinned,
-                color = ctnNote.color
+                color = ctnNote.color,
+                folderId = folderKey?.let(folderNameToId::get)
             )
             repository.insertNote(note)
             count++
         }
+        lastImportNewFolderCount = createdFolderCount + perNoteFolderCount
         return count
+    }
+
+    private var lastImportNewFolderCount: Int = 0
+
+    private suspend fun ensureImportedFolder(rawName: String?): Long? {
+        val name = rawName?.trim()?.take(24)?.takeIf { it.isNotBlank() } ?: return null
+        val existing = repository.folders.first().firstOrNull { it.name.equals(name, ignoreCase = true) }
+        if (existing != null) return existing.id
+        val id = repository.createFolder(FolderEntity(name = name, createdAt = System.currentTimeMillis()))
+        lastImportNewFolderCount++
+        return id
     }
 
     /**
@@ -339,6 +418,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         val color = noteMap["color"]?.toString()?.toIntOrNull() ?: 0xFFFFFFFF.toInt()
         val updatedAt = noteMap["updatedAt"]?.toString()?.toLong() ?: Instant.now().toEpochMilli()
         val createdAt = noteMap["createdAt"]?.toString()?.toLong() ?: updatedAt
+        val folderId = ensureImportedFolder(noteMap["folder"]?.toString())
 
         val note = NoteEntity(
             id = 0,
@@ -347,7 +427,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             createdAt = createdAt,
             updatedAt = updatedAt,
             isPinned = isPinned,
-            color = color
+            color = color,
+            folderId = folderId
         )
         repository.insertNote(note)
         return 1
@@ -405,7 +486,11 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         return 1
     }
 
-    private fun exportNotesInternal(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean) {
+    private fun exportNotesInternal(
+        notes: List<NoteEntity>,
+        format: ExportFormat,
+        isSingle: Boolean
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             exportResult.value = null
             try {
@@ -430,6 +515,33 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    private fun exportCtnNotes(notes: List<NoteEntity>, folders: List<FolderEntity>? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            exportResult.value = null
+            try {
+                if (notes.isEmpty()) {
+                    exportResult.value = ExportResult.Error("Folder kosong, tidak ada yang diekspor")
+                    return@launch
+                }
+                val content = exportToCtn(notes, folders)
+                val fileName = buildCtnFileName(folders?.singleOrNull()?.name)
+                val destination = saveToCatetanFolder(content, fileName, "application/x-catetan")
+                exportResult.value = ExportResult.Success(fileName, destination)
+            } catch (e: Exception) {
+                Log.e("Export", "CTN export failed", e)
+                exportResult.value = ExportResult.Error("Gagal ekspor: ${e.message}")
+            }
+        }
+    }
+
+    private fun buildCtnFileName(folderName: String?): String {
+        val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").format(LocalDateTime.now())
+        val base = folderName?.let { "catetan_${fileSafeFolderName(it).take(40)}" } ?: "catetan_semua"
+        return "${base}_$timestamp.ctn"
+    }
+
+    private fun fileSafeFolderName(folderName: String): String = folderName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
 
     private fun buildExportFileName(notes: List<NoteEntity>, format: ExportFormat, isSingle: Boolean): String {
         val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").format(LocalDateTime.now())
@@ -460,8 +572,9 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         return sb.toString()
     }
 
-    private fun exportToJson(notes: List<NoteEntity>): String {
+    private suspend fun exportToJson(notes: List<NoteEntity>): String {
         val json = Json { prettyPrint = true }
+        val folderNames = repository.folders.first().associate { it.id to it.name }
         val exportData = notes.map { note ->
             mapOf(
                 "id" to note.id,
@@ -470,7 +583,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 "createdAt" to note.createdAt,
                 "updatedAt" to note.updatedAt,
                 "isPinned" to note.isPinned,
-                "color" to note.color
+                "color" to note.color,
+                "folder" to note.folderId?.let(folderNames::get)
             )
         }
         return json.encodeToString(exportData)
@@ -495,6 +609,31 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             sb.appendLine()
         }
         return sb.toString()
+    }
+
+    private suspend fun exportToCtn(notes: List<NoteEntity>, includedFolders: List<FolderEntity>? = null): String {
+        val folders = repository.folders.first()
+        val folderNameById = folders.associate { it.id to it.name }
+        val exportedFolders = includedFolders ?: folders
+        val exportData = CtnExport(
+            app = "Catetan",
+            version = "1.1",
+            exportedAt = LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME),
+            notes = notes.map { note ->
+                CtnNote(
+                    id = note.id,
+                    title = note.title,
+                    content = note.content,
+                    createdAt = note.createdAt,
+                    updatedAt = note.updatedAt,
+                    isPinned = note.isPinned,
+                    color = note.color,
+                    folder = note.folderId?.let(folderNameById::get)
+                )
+            },
+            folders = exportedFolders.map { it.name }
+        )
+        return Json { prettyPrint = true }.encodeToString(exportData)
     }
 
     private suspend fun saveToCatetanFolder(content: String, fileName: String, mimeType: String): String = withContext(Dispatchers.IO) {
@@ -555,7 +694,8 @@ data class CtnExport(
     @SerialName("app") val app: String,
     @SerialName("version") val version: String,
     @SerialName("exportedAt") val exportedAt: String,
-    @SerialName("notes") val notes: List<CtnNote>
+    @SerialName("notes") val notes: List<CtnNote>,
+    @SerialName("folders") val folders: List<String>? = null
 )
 
 @Serializable
@@ -566,5 +706,6 @@ data class CtnNote(
     @SerialName("createdAt") val createdAt: Long? = null,
     @SerialName("updatedAt") val updatedAt: Long,
     @SerialName("isPinned") val isPinned: Boolean,
-    @SerialName("color") val color: Int
+    @SerialName("color") val color: Int,
+    @SerialName("folder") val folder: String? = null
 )

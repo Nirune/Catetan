@@ -18,8 +18,7 @@ class NoteRepository(private val noteDao: NoteDao, private val folderDao: Folder
     suspend fun folderNameCount(name: String): Int = requireNotNull(folderDao).countByName(name)
     suspend fun folderNameCount(name: String, exceptId: Long): Int = requireNotNull(folderDao).countByName(name, exceptId)
     suspend fun deleteFolder(id: Long): Int {
-        requireNotNull(folderDao).detachNotes(id)
-        return requireNotNull(folderDao).deleteFolder(id)
+        return requireNotNull(folderDao).deleteFolderAndDetachNotes(id)
     }
     suspend fun moveNotesToFolder(ids: List<Long>, targetFolderId: Long?): Int =
         noteDao.moveNotesToFolder(ids, targetFolderId)

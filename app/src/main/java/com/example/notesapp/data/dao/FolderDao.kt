@@ -20,6 +20,12 @@ interface FolderDao {
     @Query("UPDATE notes SET folderId = NULL WHERE folderId = :id")
     suspend fun detachNotes(id: Long): Int
 
+    @androidx.room.Transaction
+    suspend fun deleteFolderAndDetachNotes(id: Long): Int {
+        detachNotes(id)
+        return deleteFolder(id)
+    }
+
     @Query("DELETE FROM folders WHERE id = :id")
     suspend fun deleteFolder(id: Long): Int
 

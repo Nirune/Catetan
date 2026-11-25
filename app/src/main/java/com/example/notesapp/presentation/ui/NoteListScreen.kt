@@ -238,17 +238,19 @@ fun NoteListScreen(
     }
 
     fun selectFolderAt(index: Int) {
-        val currentIndex = if (activeFolderId == null) 0 else folders.indexOfFirst { it.id == activeFolderId } + 1
+        val activeIndex = activeFolderId?.let { id -> folders.indexOfFirst { it.id == id } } ?: -1
+        val currentIndex = if (activeIndex < 0) 0 else activeIndex + 1
         if (index != currentIndex) folderSwipeDirection = if (index > currentIndex) 1 else -1
         when (index) {
             0 -> viewModel.setActiveFolder(null)
-            in 1..folders.size -> viewModel.setActiveFolder(folders[index - 1].id)
+            in 1..folders.size -> folders.getOrNull(index - 1)?.let { viewModel.setActiveFolder(it.id) }
         }
     }
 
     fun moveFolderBy(direction: Int) {
         if (isSelectionMode || direction == 0) return
-        val currentIndex = if (activeFolderId == null) 0 else folders.indexOfFirst { it.id == activeFolderId } + 1
+        val activeIndex = activeFolderId?.let { id -> folders.indexOfFirst { it.id == id } } ?: -1
+        val currentIndex = if (activeIndex < 0) 0 else activeIndex + 1
         val targetIndex = (currentIndex + direction).coerceIn(0, folders.size)
         if (targetIndex != currentIndex) {
             selectFolderAt(targetIndex)
@@ -256,8 +258,9 @@ fun NoteListScreen(
     }
 
     LaunchedEffect(activeFolderId, folders) {
-        val activeIndex = if (activeFolderId == null) 0 else folders.indexOfFirst { it.id == activeFolderId } + 1
-        if (activeIndex >= 0) folderChipState.animateScrollToItem(activeIndex)
+        val folderIndex = activeFolderId?.let { id -> folders.indexOfFirst { it.id == id } } ?: -1
+        val activeIndex = if (folderIndex < 0) 0 else folderIndex + 1
+        folderChipState.animateScrollToItem(activeIndex.coerceIn(0, folders.size))
     }
 
     fun toggleSelectAll() {
@@ -356,7 +359,7 @@ fun NoteListScreen(
                 is ImportResult.Success -> {
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            message = "Berhasil impor: ${result.importedCount} catatan",
+                            message = "${result.importedCount} catatan diimpor, ${result.createdFolderCount} folder baru dibuat",
                             actionLabel = "OK"
                         )
                     }
@@ -611,15 +614,16 @@ fun NoteListScreen(
         )
     }
 
-    if (showSingleExportDialog && noteToExport != null) {
+    val exportTargetNote = noteToExport
+    if (showSingleExportDialog && exportTargetNote != null) {
         SingleNoteExportDialog(
-            note = noteToExport!!,
+            note = exportTargetNote,
             onDismiss = {
                 showSingleExportDialog = false
                 noteToExport = null
             },
             onExport = { format ->
-                viewModel.exportSingleNote(noteToExport!!, format)
+                viewModel.exportSingleNote(exportTargetNote, format)
                 showSingleExportDialog = false
                 noteToExport = null
             }
@@ -927,9 +931,10 @@ fun NoteListScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
+                    val renameTarget = folderTarget
                     scope.launch {
                         folderError = if (isRename) {
-                            folderTarget?.let { viewModel.renameFolder(it.id, folderNameDraft) }
+                            renameTarget?.let { viewModel.renameFolder(it.id, folderNameDraft) }
                         } else viewModel.createFolder(folderNameDraft)
                         if (folderError == null) folderDialogMode = null
                     }
@@ -941,41 +946,49 @@ fun NoteListScreen(
         )
     }
 
-    if (folderDialogMode == "menu" && folderTarget != null) {
+    val menuFolderTarget = folderTarget
+    if (folderDialogMode == "menu" && menuFolderTarget != null) {
         AlertDialog(
             onDismissRequest = { folderDialogMode = null },
-            title = { Text(folderTarget!!.name) },
-            text = { Text("Pilih tindakan untuk folder ini.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    folderNameDraft = folderTarget!!.name
-                    folderError = null
-                    folderDialogMode = "rename"
-                }) { Text("Ganti nama") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { showDeleteFolderConfirmation = true; folderDialogMode = null }) {
-                        Text("Hapus folder", color = MaterialTheme.colorScheme.error)
-                    }
-                    TextButton(onClick = { folderDialogMode = null }) { Text("Tutup") }
+            title = { Text(menuFolderTarget.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Pilih tindakan untuk folder ini.")
+                    TextButton(onClick = {
+                        folderNameDraft = menuFolderTarget.name
+                        folderError = null
+                        folderDialogMode = "rename"
+                    }) { Text("Ganti nama") }
+                    TextButton(onClick = {
+                        folderDialogMode = null
+                        scope.launch { viewModel.exportFolder(menuFolderTarget.id) }
+                    }) { Text("Ekspor folder") }
+                    TextButton(onClick = {
+                        showDeleteFolderConfirmation = true
+                        folderDialogMode = null
+                    }) { Text("Hapus folder", color = MaterialTheme.colorScheme.error) }
                 }
+            },
+            confirmButton = {
+                TextButton(onClick = { folderDialogMode = null }) { Text("Tutup") }
             }
         )
     }
 
-    if (showDeleteFolderConfirmation && folderTarget != null) {
+    val deleteFolderTarget = folderTarget
+    if (showDeleteFolderConfirmation && deleteFolderTarget != null) {
         AlertDialog(
             onDismissRequest = { showDeleteFolderConfirmation = false; folderTarget = null },
             title = { Text("Hapus folder?") },
             text = {
-                Text("Hapus folder ${folderTarget!!.name}? Catatan di dalamnya tidak ikut terhapus dan akan menjadi tanpa folder.")
+                Text("Hapus folder ${deleteFolderTarget.name}? Catatan di dalamnya tidak ikut terhapus dan akan menjadi tanpa folder.")
             },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { viewModel.deleteFolder(folderTarget!!.id) }
+                    val folderId = deleteFolderTarget.id
                     showDeleteFolderConfirmation = false
                     folderTarget = null
+                    scope.launch { viewModel.deleteFolder(folderId) }
                 }) { Text("Hapus folder", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
